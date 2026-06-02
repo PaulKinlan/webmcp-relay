@@ -1,0 +1,24 @@
+{
+  "name": "webmcp-relay",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "STDIO MCP relay that exposes a page's WebMCP tools to agents through Chrome DevTools MCP.",
+  "bin": {
+    "webmcp-relay": "./src/webmcp-relay.js"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "smoke:devtools": "node ./src/devtools-direct-smoke.js",
+    "relay": "node ./src/webmcp-relay.js",
+    "relay:stable": "node ./src/webmcp-relay.js --stable",
+    "relay:dynamic": "node ./src/webmcp-relay.js --dynamic",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {}
+}
