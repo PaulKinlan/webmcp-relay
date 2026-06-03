@@ -168,6 +168,52 @@ Disable it:
 npx -y webmcp-relay --no-telemetry
 ```
 
+## Relay Logging
+
+The MCP stdio transport uses stdout, so relay logs are written to stderr and
+optionally to a file. Logs are JSON lines with `time`, `level`, `component`,
+`event`, and event fields.
+
+Enable operator logs:
+
+```sh
+npx -y webmcp-relay --headless --channel canary --log-level info
+```
+
+Write logs to a file as well:
+
+```sh
+npx -y webmcp-relay \
+  --headless \
+  --channel canary \
+  --log-level info \
+  --log-file ./reports/relay.jsonl
+```
+
+Environment variables are also supported:
+
+```sh
+WEBMCP_RELAY_LOG_LEVEL=debug WEBMCP_RELAY_LOG_FILE=./reports/relay.jsonl \
+  npx -y webmcp-relay --headless --channel canary
+```
+
+Log levels are `off`, `error`, `warn`, `info`, and `debug`. The default is
+`warn`. `--verbose` implies debug relay logs and also inherits Chrome DevTools
+MCP stderr.
+
+Useful relay events include:
+
+- `process.start`
+- `server.connect.start`
+- `open_site.start` / `open_site.done`
+- `refresh_tools.start` / `refresh_tools.done`
+- `tools.list_changed`
+- `search_registry.start` / `search_registry.done`
+- `execute_registry_tool.start` / `execute_registry_tool.done`
+- `call_dynamic_tool.start` / `call_dynamic_tool.done`
+- `devtools` component events such as `connect.start`, `navigate.done`, and
+  `webmcp_tool.execute.done`
+
 Run deterministic evals:
 
 ```sh

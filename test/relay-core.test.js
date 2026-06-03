@@ -193,6 +193,26 @@ test("relay logs telemetry for lookup and execution", async () => {
   assert.equal(telemetry.events.some((event) => event.eventType === "execute_registry_tool"), true);
 });
 
+test("relay logs tool operation lifecycle events", async () => {
+  const logger = new FakeLogger();
+  const relay = new WebmcpRelay({
+    bridge: new FakeBridge(),
+    mode: "dynamic",
+    logger
+  });
+
+  await relay.openSite({ url: "https://example.com/logs" }, { notify: false });
+  await relay.callMcpTool("webmcp_tool_query", {
+    method: "POST"
+  });
+
+  assert.equal(logger.events.some((event) => event.event === "relay.created"), true);
+  assert.equal(logger.events.some((event) => event.event === "open_site.start"), true);
+  assert.equal(logger.events.some((event) => event.event === "open_site.done"), true);
+  assert.equal(logger.events.some((event) => event.event === "call_dynamic_tool.start"), true);
+  assert.equal(logger.events.some((event) => event.event === "call_dynamic_tool.done"), true);
+});
+
 class FakeBridge {
   constructor() {
     this.executed = [];
@@ -261,6 +281,32 @@ class FakeTelemetry {
   }
 
   close() {}
+}
+
+class FakeLogger {
+  constructor() {
+    this.events = [];
+  }
+
+  child() {
+    return this;
+  }
+
+  error(event, fields) {
+    this.events.push({ level: "error", event, fields });
+  }
+
+  warn(event, fields) {
+    this.events.push({ level: "warn", event, fields });
+  }
+
+  info(event, fields) {
+    this.events.push({ level: "info", event, fields });
+  }
+
+  debug(event, fields) {
+    this.events.push({ level: "debug", event, fields });
+  }
 }
 
 async function tempRegistry() {

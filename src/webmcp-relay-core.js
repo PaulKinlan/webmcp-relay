@@ -5,6 +5,7 @@ import {
   ListToolsRequestSchema,
   McpError
 } from "@modelcontextprotocol/sdk/types.js";
+import { describeArgs, noopLogger } from "./logger.js";
 
 export const RELAY_TOOL_NAMES = {
   openSite: "webmcp_open_site",
@@ -22,7 +23,7 @@ const EMPTY_OBJECT_SCHEMA = {
 };
 
 export class WebmcpRelay {
-  constructor({ bridge, mode = "stable", registry, telemetry }) {
+  constructor({ bridge, mode = "stable", registry, telemetry, logger }) {
     if (!bridge) {
       throw new Error("WebmcpRelay requires a DevtoolsWebmcpClient bridge.");
     }
@@ -34,6 +35,7 @@ export class WebmcpRelay {
     this.dynamicToolMap = new Map();
     this.registry = registry;
     this.telemetry = telemetry;
+    this.logger = logger ?? noopLogger;
     this.server = new Server(
       {
         name: mode === "dynamic" ? "webmcp-relay" : "webmcp-relay-stable",
@@ -52,28 +54,52 @@ export class WebmcpRelay {
       }
     );
 
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: this.listMcpTools()
-    }));
+    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
+      const tools = this.listMcpTools();
+      this.logger.debug("mcp.list_tools", {
+        mode: this.mode,
+        count: tools.length,
+        toolNames: tools.map((tool) => tool.name)
+      });
+      return {
+        tools
+      };
+    });
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args = {} } = request.params;
+      this.logger.debug("mcp.call_tool.received", {
+        toolName: name,
+        args: describeArgs(args)
+      });
       return this.callMcpTool(name, args);
+    });
+
+    this.logger.info("relay.created", {
+      mode: this.mode,
+      registryEnabled: this.registry?.enabled !== false && Boolean(this.registry),
+      telemetryEnabled: this.telemetry?.enabled !== false && Boolean(this.telemetry)
     });
   }
 
   async close() {
+    this.logger.info("relay.close.start");
     await this.bridge.close();
     this.registry?.close?.();
     this.telemetry?.close?.();
     await this.server.close().catch(() => {});
+    this.logger.info("relay.close.done");
   }
 
   async openInitialUrl(options = {}) {
     if (!options.url) {
+      this.logger.debug("initial_url.skip");
       return;
     }
 
+    this.logger.info("initial_url.open", {
+      url: options.url
+    });
     await this.openSite({
       url: options.url,
       waitForText: options.waitForText,
@@ -102,6 +128,11 @@ export class WebmcpRelay {
   }
 
   async callMcpTool(name, args) {
+    this.logger.debug("mcp.call_tool.dispatch", {
+      toolName: name,
+      args: describeArgs(args)
+    });
+
     switch (name) {
       case RELAY_TOOL_NAMES.openSite:
         return this.openSite(args);
@@ -375,31 +406,68 @@ export class WebmcpRelay {
       return;
     }
 
-    this.server.sendToolListChanged().catch(() => {});
+    this.logger.info("tools.list_changed", {
+      currentUrl: this.currentUrl,
+      toolCount: this.siteTools.length,
+      toolNames: this.siteTools.map((tool) => tool.name)
+    });
+    this.server.sendToolListChanged().catch((error) => {
+      this.logger.warn("tools.list_changed.error", {
+        error
+      });
+    });
   }
 
   async persistCurrentTools() {
     if (!this.registry || !this.currentUrl) {
+      this.logger.debug("registry.persist.skip", {
+        hasRegistry: Boolean(this.registry),
+        currentUrl: this.currentUrl
+      });
       return;
     }
 
-    await this.registry.upsertTools(this.currentUrl, this.siteTools);
+    const entries = await this.registry.upsertTools(this.currentUrl, this.siteTools);
+    this.logger.debug("registry.persist.done", {
+      url: this.currentUrl,
+      count: entries.length,
+      ids: entries.map((entry) => entry.id)
+    });
   }
 
   async recordCurrentToolUse(toolName, result) {
     if (!this.registry || !this.currentUrl || result?.isError) {
+      this.logger.debug("registry.record_current_tool_use.skip", {
+        hasRegistry: Boolean(this.registry),
+        currentUrl: this.currentUrl,
+        toolName,
+        resultIsError: result?.isError === true
+      });
       return;
     }
 
-    await this.registry.recordUse(this.registry.idFor(this.currentUrl, toolName));
+    const id = this.registry.idFor(this.currentUrl, toolName);
+    await this.registry.recordUse(id);
+    this.logger.debug("registry.record_current_tool_use.done", {
+      id,
+      toolName
+    });
   }
 
   async recordRegistryUse(id, result) {
     if (!this.registry || result?.isError) {
+      this.logger.debug("registry.record_registry_use.skip", {
+        hasRegistry: Boolean(this.registry),
+        id,
+        resultIsError: result?.isError === true
+      });
       return;
     }
 
     await this.registry.recordUse(id);
+    this.logger.debug("registry.record_registry_use.done", {
+      id
+    });
   }
 
   assertRegistry() {
@@ -410,25 +478,40 @@ export class WebmcpRelay {
 
   async withTelemetry(eventType, baseEvent, action, metadataFn) {
     const startedAt = performance.now();
+    this.logger.info(`${eventType}.start`, baseEvent);
 
     try {
       const result = await action();
+      const metadata = metadataFn ? metadataFn(result) : undefined;
+      const latencyMs = performance.now() - startedAt;
       await this.logTelemetry({
         ...baseEvent,
         eventType,
-        latencyMs: performance.now() - startedAt,
+        latencyMs,
         isError: result?.isError === true,
         errorText: result?.isError ? firstTextContent(result) : undefined,
-        metadata: metadataFn ? metadataFn(result) : undefined
+        metadata
+      });
+      this.logger.info(`${eventType}.done`, {
+        ...baseEvent,
+        latencyMs,
+        isError: result?.isError === true,
+        ...metadata
       });
       return result;
     } catch (error) {
+      const latencyMs = performance.now() - startedAt;
       await this.logTelemetry({
         ...baseEvent,
         eventType,
-        latencyMs: performance.now() - startedAt,
+        latencyMs,
         isError: true,
         errorText: error.message
+      });
+      this.logger.error(`${eventType}.error`, {
+        ...baseEvent,
+        latencyMs,
+        error
       });
       throw error;
     }

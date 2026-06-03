@@ -4,6 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { parseCommonArgs, readValue, splitOption } from "./cli.js";
 import { DevtoolsWebmcpClient } from "./devtools-webmcp-client.js";
 import { runEvalCli } from "./eval-cli.js";
+import { createLogger } from "./logger.js";
 import { runRegistryCli } from "./registry-cli.js";
 import { TelemetryStore } from "./telemetry-store.js";
 import { ToolRegistry } from "./tool-registry.js";
@@ -27,7 +28,28 @@ async function main() {
     return;
   }
 
-  const bridge = new DevtoolsWebmcpClient(options);
+  const logger = createLogger({
+    level: options.logLevel,
+    file: options.logFile,
+    component: "webmcp-relay"
+  });
+  logger.info("process.start", {
+    mode: options.mode,
+    headless: options.headless,
+    channel: options.channel,
+    browserUrl: options.browserUrl,
+    registryEnabled: options.registryEnabled,
+    telemetryEnabled: options.telemetryEnabled,
+    registryDb: options.registryDb,
+    telemetryDb: options.telemetryDb,
+    logLevel: options.logLevel,
+    logFile: options.logFile
+  });
+
+  const bridge = new DevtoolsWebmcpClient({
+    ...options,
+    logger: logger.child("devtools")
+  });
   const registry = new ToolRegistry({
     path: options.registryDb,
     enabled: options.registryEnabled
@@ -40,13 +62,23 @@ async function main() {
     bridge,
     mode: options.mode,
     registry,
-    telemetry
+    telemetry,
+    logger: logger.child("relay")
   });
 
   try {
     await relay.openInitialUrl(options);
+    logger.info("server.connect.start", {
+      transport: "stdio"
+    });
     await relay.server.connect(new StdioServerTransport());
+    logger.info("server.connect.done", {
+      transport: "stdio"
+    });
   } catch (error) {
+    logger.error("process.error", {
+      error
+    });
     process.stderr.write(`WebMCP relay failed: ${error.message}\n`);
     const stderr = bridge.serverStderr();
     if (stderr) {
@@ -54,6 +86,7 @@ async function main() {
     }
     process.exitCode = 1;
     await relay.close();
+    logger.close();
   }
 }
 
@@ -94,6 +127,17 @@ function parseArgs(args) {
       case "--no-telemetry":
         extra.telemetryEnabled = false;
         break;
+      case "--log-level":
+        extra.logLevel = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--log-file":
+        extra.logFile = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--no-log":
+        extra.logLevel = "off";
+        break;
       default:
         commonArgs.push(arg);
         break;
@@ -104,9 +148,15 @@ function parseArgs(args) {
     throw new Error(`Unsupported mode: ${extra.mode}`);
   }
 
+  const common = parseCommonArgs(commonArgs);
   return {
-    ...parseCommonArgs(commonArgs),
-    ...extra
+    ...common,
+    ...extra,
+    logLevel:
+      extra.logLevel ??
+      process.env.WEBMCP_RELAY_LOG_LEVEL ??
+      (common.verbose ? "debug" : "warn"),
+    logFile: extra.logFile ?? process.env.WEBMCP_RELAY_LOG_FILE
   };
 }
 
@@ -132,6 +182,10 @@ Common options:
   --no-registry             Disable local registry persistence and global lookup tools.
   --telemetry-db <path>     Local SQLite telemetry path. Defaults to the user data directory.
   --no-telemetry            Disable local telemetry logging.
+  --log-level <level>       Log level: off, error, warn, info, debug. Default: warn.
+  --log-file <path>         Also append logs to a file. Uses WEBMCP_RELAY_LOG_FILE if set.
+  --no-log                  Disable relay logs.
+  --verbose                 Debug logging plus inherited Chrome DevTools MCP stderr.
 
 Eval:
   webmcp-relay eval run <case.json...> --report ./report.json
