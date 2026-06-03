@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
+import { ToolRegistry } from "../src/tool-registry.js";
 import { dynamicMcpToolName, RELAY_TOOL_NAMES, WebmcpRelay } from "../src/webmcp-relay-core.js";
 
 test("stable relay exposes only wrapper tools", () => {
@@ -88,6 +92,80 @@ test("dynamicMcpToolName sanitizes and avoids collisions", () => {
   assert.equal(dynamicMcpToolName("query", used), "webmcp_tool_query");
 });
 
+test("registry tools are exposed when a registry is configured", () => {
+  const relay = new WebmcpRelay({
+    bridge: new FakeBridge(),
+    mode: "stable",
+    registry: new FakeRegistry()
+  });
+
+  const toolNames = relay.listMcpTools().map((tool) => tool.name);
+  assert.equal(toolNames.includes(RELAY_TOOL_NAMES.searchRegistry), true);
+  assert.equal(toolNames.includes(RELAY_TOOL_NAMES.executeRegistryTool), true);
+});
+
+test("opening a site persists discovered tools to the registry", async () => {
+  const registry = await tempRegistry();
+  const relay = new WebmcpRelay({
+    bridge: new FakeBridge(),
+    mode: "dynamic",
+    registry
+  });
+
+  await relay.openSite({ url: "https://example.com/logs" }, { notify: false });
+
+  const entries = await registry.list();
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].url, "https://example.com/logs");
+  assert.equal(entries[0].toolName, "query");
+});
+
+test("searching the registry returns global matches", async () => {
+  const registry = await tempRegistry();
+  const relay = new WebmcpRelay({
+    bridge: new FakeBridge(),
+    mode: "dynamic",
+    registry
+  });
+
+  await relay.openSite({ url: "https://example.com/logs" }, { notify: false });
+  const result = await relay.callMcpTool(RELAY_TOOL_NAMES.searchRegistry, {
+    query: "query logs by method"
+  });
+
+  assert.equal(result.structuredContent.matches.length, 1);
+  assert.equal(result.structuredContent.matches[0].toolName, "query");
+});
+
+test("executing a registry tool opens the stored site and calls the tool", async () => {
+  const registry = await tempRegistry();
+  const bridge = new FakeBridge();
+  const relay = new WebmcpRelay({
+    bridge,
+    mode: "dynamic",
+    registry
+  });
+
+  await relay.openSite({ url: "https://example.com/logs" }, { notify: false });
+  const [entry] = await registry.list();
+
+  await relay.callMcpTool(RELAY_TOOL_NAMES.executeRegistryTool, {
+    id: entry.id,
+    input: {
+      method: "POST"
+    }
+  });
+
+  assert.equal(bridge.url, "https://example.com/logs");
+  assert.deepEqual(bridge.executed.at(-1), {
+    name: "query",
+    input: {
+      method: "POST"
+    }
+  });
+  assert.equal((await registry.get(entry.id)).useCount, 1);
+});
+
 class FakeBridge {
   constructor() {
     this.executed = [];
@@ -129,4 +207,25 @@ class FakeBridge {
   }
 
   async close() {}
+}
+
+class FakeRegistry {
+  constructor() {
+    this.enabled = true;
+  }
+
+  async search() {
+    return [];
+  }
+
+  async get() {
+    return undefined;
+  }
+}
+
+async function tempRegistry() {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "webmcp-relay-test-"));
+  return new ToolRegistry({
+    path: path.join(dir, "registry.json")
+  });
 }

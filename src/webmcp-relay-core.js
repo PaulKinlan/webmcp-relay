@@ -10,7 +10,9 @@ export const RELAY_TOOL_NAMES = {
   openSite: "webmcp_open_site",
   refreshTools: "webmcp_refresh_tools",
   listTools: "webmcp_list_tools",
-  callTool: "webmcp_call_tool"
+  callTool: "webmcp_call_tool",
+  searchRegistry: "webmcp_search_registry",
+  executeRegistryTool: "webmcp_execute_registry_tool"
 };
 
 const EMPTY_OBJECT_SCHEMA = {
@@ -20,7 +22,7 @@ const EMPTY_OBJECT_SCHEMA = {
 };
 
 export class WebmcpRelay {
-  constructor({ bridge, mode = "stable" }) {
+  constructor({ bridge, mode = "stable", registry }) {
     if (!bridge) {
       throw new Error("WebmcpRelay requires a DevtoolsWebmcpClient bridge.");
     }
@@ -30,6 +32,7 @@ export class WebmcpRelay {
     this.currentUrl = undefined;
     this.siteTools = [];
     this.dynamicToolMap = new Map();
+    this.registry = registry;
     this.server = new Server(
       {
         name: mode === "dynamic" ? "webmcp-relay" : "webmcp-relay-stable",
@@ -43,8 +46,8 @@ export class WebmcpRelay {
         },
         instructions:
           mode === "dynamic"
-            ? "Open a WebMCP-enabled page with webmcp_open_site. The server exposes discovered page tools directly and emits tools/list_changed when they change. Use webmcp_call_tool as a fallback."
-            : "Open a WebMCP-enabled page with webmcp_open_site, inspect tools with webmcp_list_tools, and call them with webmcp_call_tool."
+            ? "Open a WebMCP-enabled page with webmcp_open_site. The server exposes discovered page tools directly and emits tools/list_changed when they change. Use webmcp_search_registry to find tools discovered across sites and webmcp_execute_registry_tool to run them."
+            : "Open a WebMCP-enabled page with webmcp_open_site, inspect tools with webmcp_list_tools, call them with webmcp_call_tool, or use webmcp_search_registry for tools discovered across sites."
       }
     );
 
@@ -84,6 +87,10 @@ export class WebmcpRelay {
       callSiteTool()
     ];
 
+    if (this.registry && this.registry.enabled !== false) {
+      tools.push(searchRegistryTool(), executeRegistryTool());
+    }
+
     if (this.mode === "dynamic") {
       tools.push(...this.siteTools.map((tool) => this.toDynamicMcpTool(tool)));
     }
@@ -101,6 +108,10 @@ export class WebmcpRelay {
         return this.listSiteTools(args);
       case RELAY_TOOL_NAMES.callTool:
         return this.callSiteTool(args);
+      case RELAY_TOOL_NAMES.searchRegistry:
+        return this.searchRegistry(args);
+      case RELAY_TOOL_NAMES.executeRegistryTool:
+        return this.executeRegistryTool(args);
       default:
         return this.callDynamicTool(name, args);
     }
@@ -136,6 +147,7 @@ export class WebmcpRelay {
     const { tools } = await this.bridge.listPageTools();
     this.siteTools = tools;
     this.rebuildDynamicToolMap();
+    await this.persistCurrentTools();
 
     if (options.notify !== false) {
       this.notifyToolsChanged();
@@ -164,7 +176,9 @@ export class WebmcpRelay {
       throw invalidParams(`${RELAY_TOOL_NAMES.callTool} requires name.`);
     }
 
-    return this.bridge.executePageTool(name, normaliseToolInput(args.input));
+    const result = await this.bridge.executePageTool(name, normaliseToolInput(args.input));
+    await this.recordCurrentToolUse(name, result);
+    return result;
   }
 
   async callDynamicTool(name, args = {}) {
@@ -173,7 +187,60 @@ export class WebmcpRelay {
       throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
     }
 
-    return this.bridge.executePageTool(siteToolName, args);
+    const result = await this.bridge.executePageTool(siteToolName, args);
+    await this.recordCurrentToolUse(siteToolName, result);
+    return result;
+  }
+
+  async searchRegistry(args = {}) {
+    this.assertRegistry();
+
+    const query = args.query ?? args.intent ?? "";
+    if (typeof query !== "string") {
+      throw invalidParams(`${RELAY_TOOL_NAMES.searchRegistry} requires query to be a string.`);
+    }
+
+    const matches = await this.registry.search(query, {
+      limit: args.limit
+    });
+
+    return jsonResult(`Found ${matches.length} registry match(es).`, {
+      query,
+      registryPath: this.registry.path,
+      matches: matches.map((match) => publicRegistryMatch(match))
+    });
+  }
+
+  async executeRegistryTool(args = {}) {
+    this.assertRegistry();
+
+    const id = args.id ?? args.toolId;
+    if (!id || typeof id !== "string") {
+      throw invalidParams(`${RELAY_TOOL_NAMES.executeRegistryTool} requires id.`);
+    }
+
+    const entry = await this.registry.get(id);
+    if (!entry) {
+      throw invalidParams(`No registry tool found for id: ${id}`);
+    }
+
+    await this.bridge.navigate(entry.url, {
+      waitForText: args.waitForText,
+      timeout: args.timeout
+    });
+    this.currentUrl = entry.url;
+    await this.refreshTools({ notify: false });
+
+    const currentTool = this.siteTools.find((tool) => tool.name === entry.toolName);
+    if (!currentTool) {
+      throw invalidParams(
+        `Registry tool ${entry.toolName} was not exposed after opening ${entry.url}.`
+      );
+    }
+
+    const result = await this.bridge.executePageTool(entry.toolName, normaliseToolInput(args.input));
+    await this.recordRegistryUse(entry.id, result);
+    return result;
   }
 
   toDynamicMcpTool(tool) {
@@ -237,6 +304,36 @@ export class WebmcpRelay {
     }
 
     this.server.sendToolListChanged().catch(() => {});
+  }
+
+  async persistCurrentTools() {
+    if (!this.registry || !this.currentUrl) {
+      return;
+    }
+
+    await this.registry.upsertTools(this.currentUrl, this.siteTools);
+  }
+
+  async recordCurrentToolUse(toolName, result) {
+    if (!this.registry || !this.currentUrl || result?.isError) {
+      return;
+    }
+
+    await this.registry.recordUse(this.registry.idFor(this.currentUrl, toolName));
+  }
+
+  async recordRegistryUse(id, result) {
+    if (!this.registry || result?.isError) {
+      return;
+    }
+
+    await this.registry.recordUse(id);
+  }
+
+  assertRegistry() {
+    if (!this.registry || this.registry.enabled === false) {
+      throw invalidParams("The WebMCP tool registry is disabled.");
+    }
   }
 }
 
@@ -377,6 +474,88 @@ function callSiteTool() {
   };
 }
 
+function searchRegistryTool() {
+  return {
+    name: RELAY_TOOL_NAMES.searchRegistry,
+    description:
+      "Search the local WebMCP tool registry for tools that may satisfy a task or intent across previously discovered sites.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Task, intent, or capability to search for."
+        },
+        intent: {
+          type: "string",
+          description: "Alias for query."
+        },
+        limit: {
+          type: "number",
+          description: "Maximum results to return. Defaults to 10, max 50."
+        }
+      },
+      additionalProperties: false
+    },
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false
+    },
+    execution: {
+      taskSupport: "forbidden"
+    }
+  };
+}
+
+function executeRegistryTool() {
+  return {
+    name: RELAY_TOOL_NAMES.executeRegistryTool,
+    description:
+      "Open the site for a tool found in the local registry, refresh its WebMCP tools, and execute the selected tool by registry id.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "Registry tool id returned by webmcp_search_registry."
+        },
+        toolId: {
+          type: "string",
+          description: "Alias for id."
+        },
+        input: {
+          description: "Tool parameters as an object or a JSON string.",
+          anyOf: [
+            {
+              type: "object",
+              additionalProperties: true
+            },
+            {
+              type: "string"
+            }
+          ]
+        },
+        waitForText: {
+          type: "string",
+          description: "Optional visible text to wait for after opening the site."
+        },
+        timeout: {
+          type: "number",
+          description: "Navigation timeout in milliseconds."
+        }
+      },
+      additionalProperties: false
+    },
+    annotations: {
+      readOnlyHint: false,
+      openWorldHint: true
+    },
+    execution: {
+      taskSupport: "forbidden"
+    }
+  };
+}
+
 function normaliseToolInput(input) {
   if (typeof input !== "string") {
     return input;
@@ -414,6 +593,26 @@ function jsonResult(text, structuredContent) {
       }
     ],
     structuredContent
+  };
+}
+
+function publicRegistryMatch(match) {
+  const entry = match.entry;
+  return {
+    id: entry.id,
+    score: match.score,
+    matchedTerms: match.matchedTerms,
+    url: entry.url,
+    origin: entry.origin,
+    toolName: entry.toolName,
+    title: entry.title,
+    description: entry.description,
+    inputSchema: entry.inputSchema,
+    outputSchema: entry.outputSchema,
+    firstSeen: entry.firstSeen,
+    lastSeen: entry.lastSeen,
+    useCount: entry.useCount ?? 0,
+    lastUsed: entry.lastUsed
   };
 }
 

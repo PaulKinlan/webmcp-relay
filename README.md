@@ -61,6 +61,8 @@ Dynamic mode exposes wrapper tools first:
 - `webmcp_refresh_tools`
 - `webmcp_list_tools`
 - `webmcp_call_tool`
+- `webmcp_search_registry`
+- `webmcp_execute_registry_tool`
 
 After `webmcp_open_site`, it calls Chrome DevTools MCP `list_webmcp_tools`,
 rebuilds its MCP tool list, and sends `notifications/tools/list_changed`.
@@ -75,6 +77,48 @@ npx -y webmcp-relay --stable
 
 In stable mode, use `webmcp_list_tools` and `webmcp_call_tool`.
 
+## Local Tool Registry
+
+`webmcp-relay` keeps a local registry of WebMCP tools discovered over time. This
+adds a Web Intents-style lookup layer: a user-agent-local list of sites and
+capabilities that can be searched globally, not only on the active page.
+
+Discovery updates:
+
+- `webmcp_open_site` discovers the page's tools and stores them.
+- `webmcp_refresh_tools` refreshes the active page's tools and stores them.
+
+Use updates:
+
+- Calling a dynamic page tool updates its `useCount` and `lastUsed`.
+- Calling `webmcp_call_tool` updates its `useCount` and `lastUsed`.
+- Calling `webmcp_execute_registry_tool` updates its `useCount` and `lastUsed`.
+
+Registry lookup:
+
+- `webmcp_search_registry` searches previously discovered tools by task, tool
+  name, description, URL, and input schema fields.
+- `webmcp_execute_registry_tool` opens the stored site URL, refreshes its current
+  WebMCP tools, verifies the registered tool still exists, then executes it.
+
+The default registry path is:
+
+- macOS: `~/Library/Application Support/webmcp-relay/registry.json`
+- Linux/other: `$XDG_DATA_HOME/webmcp-relay/registry.json` or
+  `~/.local/share/webmcp-relay/registry.json`
+
+Override it:
+
+```sh
+npx -y webmcp-relay --registry-db /path/to/registry.json
+```
+
+Disable it:
+
+```sh
+npx -y webmcp-relay --no-registry
+```
+
 ## Local Commands
 
 Install:
@@ -87,6 +131,12 @@ Run the relay locally:
 
 ```sh
 npm run relay -- --headless --channel canary
+```
+
+Run with an explicit registry DB:
+
+```sh
+npm run relay -- --headless --channel canary --registry-db ./registry.json
 ```
 
 Run stable mode:
@@ -125,6 +175,10 @@ Chrome Canary 150 works for both list and execute.
 Dynamic relay was verified by connecting an MCP client over stdio, calling
 `webmcp_open_site`, receiving `tools/list_changed`, then calling the dynamically
 exposed `webmcp_tool_query`.
+
+Registry lookup was verified by opening the analytics dashboard demo, searching
+for `filter POST server logs`, receiving the stored `query` tool match, then
+executing it via `webmcp_execute_registry_tool`.
 
 Stable relay was verified by connecting an MCP client over stdio, listing
 `webmcp_open_site,webmcp_refresh_tools,webmcp_list_tools,webmcp_call_tool`,

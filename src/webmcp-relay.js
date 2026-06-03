@@ -3,6 +3,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { parseCommonArgs, readValue, splitOption } from "./cli.js";
 import { DevtoolsWebmcpClient } from "./devtools-webmcp-client.js";
+import { ToolRegistry } from "./tool-registry.js";
 import { WebmcpRelay } from "./webmcp-relay-core.js";
 
 async function main() {
@@ -14,9 +15,14 @@ async function main() {
   }
 
   const bridge = new DevtoolsWebmcpClient(options);
+  const registry = new ToolRegistry({
+    path: options.registryDb,
+    enabled: options.registryEnabled
+  });
   const relay = new WebmcpRelay({
     bridge,
-    mode: options.mode
+    mode: options.mode,
+    registry
   });
 
   try {
@@ -36,7 +42,8 @@ async function main() {
 function parseArgs(args) {
   const commonArgs = [];
   const extra = {
-    mode: "dynamic"
+    mode: "dynamic",
+    registryEnabled: true
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -53,6 +60,13 @@ function parseArgs(args) {
         break;
       case "--stable":
         extra.mode = "stable";
+        break;
+      case "--registry-db":
+        extra.registryDb = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--no-registry":
+        extra.registryEnabled = false;
         break;
       default:
         commonArgs.push(arg);
@@ -88,6 +102,8 @@ Common options:
   --timeout <ms>            Navigation timeout.
   --mcp-package <pkg>       Package spec for npx. Default: chrome-devtools-mcp@latest.
   --server-arg <arg>        Extra argument forwarded to chrome-devtools-mcp. Repeatable.
+  --registry-db <path>      Local registry JSON path. Defaults to the user data directory.
+  --no-registry             Disable local registry persistence and global lookup tools.
 `;
 }
 
