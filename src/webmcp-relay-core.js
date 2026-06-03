@@ -601,7 +601,7 @@ function publicRegistryMatch(match) {
   return {
     id: entry.id,
     score: match.score,
-    matchedTerms: match.matchedTerms,
+    rank: match.rank,
     url: entry.url,
     origin: entry.origin,
     toolName: entry.toolName,

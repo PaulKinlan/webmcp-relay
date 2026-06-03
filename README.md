@@ -79,9 +79,14 @@ In stable mode, use `webmcp_list_tools` and `webmcp_call_tool`.
 
 ## Local Tool Registry
 
-`webmcp-relay` keeps a local registry of WebMCP tools discovered over time. This
-adds a Web Intents-style lookup layer: a user-agent-local list of sites and
-capabilities that can be searched globally, not only on the active page.
+`webmcp-relay` keeps a local SQLite registry of WebMCP tools discovered over
+time. This adds a Web Intents-style lookup layer: a user-agent-local list of
+sites and capabilities that can be searched globally, not only on the active
+page.
+
+Registry search uses SQLite FTS5 with BM25 ranking over tool name, title,
+description, URL, origin, and input-schema text. The relay does not implement
+its own ranking algorithm.
 
 Discovery updates:
 
@@ -96,21 +101,21 @@ Use updates:
 
 Registry lookup:
 
-- `webmcp_search_registry` searches previously discovered tools by task, tool
-  name, description, URL, and input schema fields.
+- `webmcp_search_registry` searches the SQLite FTS5 index by task, tool name,
+  description, URL, and input schema fields.
 - `webmcp_execute_registry_tool` opens the stored site URL, refreshes its current
   WebMCP tools, verifies the registered tool still exists, then executes it.
 
 The default registry path is:
 
-- macOS: `~/Library/Application Support/webmcp-relay/registry.json`
-- Linux/other: `$XDG_DATA_HOME/webmcp-relay/registry.json` or
-  `~/.local/share/webmcp-relay/registry.json`
+- macOS: `~/Library/Application Support/webmcp-relay/registry.sqlite`
+- Linux/other: `$XDG_DATA_HOME/webmcp-relay/registry.sqlite` or
+  `~/.local/share/webmcp-relay/registry.sqlite`
 
 Override it:
 
 ```sh
-npx -y webmcp-relay --registry-db /path/to/registry.json
+npx -y webmcp-relay --registry-db /path/to/registry.sqlite
 ```
 
 Disable it:
@@ -136,7 +141,7 @@ npm run relay -- --headless --channel canary
 Run with an explicit registry DB:
 
 ```sh
-npm run relay -- --headless --channel canary --registry-db ./registry.json
+npm run relay -- --headless --channel canary --registry-db ./registry.sqlite
 ```
 
 Run stable mode:

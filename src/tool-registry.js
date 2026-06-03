@@ -3,35 +3,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const REGISTRY_VERSION = 1;
-
-const STOP_WORDS = new Set([
-  "a",
-  "about",
-  "and",
-  "are",
-  "can",
-  "for",
-  "from",
-  "have",
-  "into",
-  "the",
-  "this",
-  "tool",
-  "tools",
-  "use",
-  "using",
-  "with"
-]);
+const REGISTRY_VERSION = 2;
 
 export class ToolRegistry {
   constructor(options = {}) {
     this.path = options.path ?? defaultRegistryPath();
     this.enabled = options.enabled !== false;
-    this.data = {
-      version: REGISTRY_VERSION,
-      tools: {}
-    };
+    this.db = undefined;
     this.loaded = false;
   }
 
@@ -40,29 +18,30 @@ export class ToolRegistry {
       return;
     }
 
-    try {
-      const text = await fs.readFile(this.path, "utf8");
-      const parsed = JSON.parse(text);
-      this.data = {
-        version: REGISTRY_VERSION,
-        tools: parsed.tools && typeof parsed.tools === "object" ? parsed.tools : {}
-      };
-    } catch (error) {
-      if (error.code !== "ENOENT") {
-        throw error;
-      }
-    }
+    const sqlite = await loadSqlite();
+    await fs.mkdir(path.dirname(this.path), { recursive: true });
 
+    this.db = new sqlite.DatabaseSync(this.path);
+    this.db.exec("PRAGMA journal_mode = WAL");
+    this.db.exec("PRAGMA synchronous = NORMAL");
+    this.db.exec("PRAGMA foreign_keys = ON");
+    this.createSchema();
+    this.assertFts5();
     this.loaded = true;
   }
 
-  async save() {
-    if (!this.enabled) {
+  close() {
+    if (!this.db) {
       return;
     }
 
-    await fs.mkdir(path.dirname(this.path), { recursive: true });
-    await fs.writeFile(this.path, JSON.stringify(this.data, null, 2), "utf8");
+    this.db.close();
+    this.db = undefined;
+    this.loaded = false;
+  }
+
+  async save() {
+    await this.load();
   }
 
   async upsertTools(url, tools) {
@@ -74,13 +53,18 @@ export class ToolRegistry {
     const now = new Date().toISOString();
     const entries = [];
 
-    for (const tool of tools) {
-      const entry = registryEntryForTool(url, tool, now, this.data.tools);
-      this.data.tools[entry.id] = entry;
-      entries.push(entry);
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const tool of tools) {
+        const entry = this.upsertTool(url, tool, now);
+        entries.push(entry);
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
     }
 
-    await this.save();
     return entries;
   }
 
@@ -90,15 +74,16 @@ export class ToolRegistry {
     }
 
     await this.load();
-    const entry = this.data.tools[id];
-    if (!entry) {
-      return undefined;
-    }
-
-    entry.useCount = (entry.useCount ?? 0) + 1;
-    entry.lastUsed = new Date().toISOString();
-    await this.save();
-    return entry;
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `UPDATE tools
+         SET use_count = use_count + 1,
+             last_used = ?
+         WHERE id = ?`
+      )
+      .run(now, id);
+    return this.get(id);
   }
 
   idFor(url, toolName) {
@@ -107,44 +92,207 @@ export class ToolRegistry {
 
   async get(id) {
     await this.load();
-    return this.data.tools[id];
+    const row = this.db.prepare("SELECT * FROM tools WHERE id = ?").get(id);
+    return row ? rowToEntry(row) : undefined;
   }
 
-  async list() {
+  async list(options = {}) {
     await this.load();
-    return Object.values(this.data.tools).sort((a, b) => {
-      const aSeen = a.lastSeen ?? "";
-      const bSeen = b.lastSeen ?? "";
-      return bSeen.localeCompare(aSeen);
-    });
+    const limit = normaliseLimit(options.limit ?? 100);
+    return this.db
+      .prepare(
+        `SELECT *
+         FROM tools
+         ORDER BY last_used DESC NULLS LAST,
+                  use_count DESC,
+                  last_seen DESC
+         LIMIT ?`
+      )
+      .all(limit)
+      .map(rowToEntry);
   }
 
   async search(query, options = {}) {
     await this.load();
     const limit = normaliseLimit(options.limit);
-    const entries = await this.list();
-    const queryTokens = [...tokenize(query)];
+    const ftsQuery = toFtsQuery(query);
 
-    const scored = entries.map((entry) => {
-      const text = registrySearchText(entry);
-      const entryTokens = tokenize(text);
-      const matchedTerms = queryTokens.filter((token) => entryTokens.has(token));
-      const exactText = text.toLowerCase();
-      const exactBoost = queryTokens.filter((token) => exactText.includes(token)).length;
-      const useBoost = Math.min(entry.useCount ?? 0, 5) * 0.25;
-      const score = matchedTerms.length + exactBoost * 0.5 + useBoost;
-
-      return {
+    if (!ftsQuery) {
+      return (await this.list({ limit })).map((entry) => ({
         entry,
-        score,
-        matchedTerms: [...new Set(matchedTerms)]
-      };
+        rank: null,
+        score: null
+      }));
+    }
+
+    return this.db
+      .prepare(
+        `SELECT tools.*,
+                bm25(tools_fts, 8.0, 6.0, 4.0, 1.0, 1.0, 3.0) AS rank
+         FROM tools_fts
+         JOIN tools ON tools.id = tools_fts.id
+         WHERE tools_fts MATCH ?
+         ORDER BY rank ASC,
+                  tools.use_count DESC,
+                  tools.last_used DESC NULLS LAST,
+                  tools.last_seen DESC
+         LIMIT ?`
+      )
+      .all(ftsQuery, limit)
+      .map((row) => ({
+        entry: rowToEntry(row),
+        rank: row.rank,
+        score: typeof row.rank === "number" ? -row.rank : null
+      }));
+  }
+
+  createSchema() {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS tools (
+        id TEXT PRIMARY KEY,
+        url TEXT NOT NULL,
+        origin TEXT,
+        host TEXT,
+        tool_name TEXT NOT NULL,
+        title TEXT,
+        description TEXT,
+        input_schema_json TEXT,
+        output_schema_json TEXT,
+        annotations_json TEXT,
+        schema_text TEXT,
+        first_seen TEXT NOT NULL,
+        last_seen TEXT NOT NULL,
+        discovery_count INTEGER NOT NULL DEFAULT 0,
+        use_count INTEGER NOT NULL DEFAULT 0,
+        last_used TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tools_url ON tools(url);
+      CREATE INDEX IF NOT EXISTS idx_tools_tool_name ON tools(tool_name);
+      CREATE INDEX IF NOT EXISTS idx_tools_last_seen ON tools(last_seen);
+    `);
+
+    this.db
+      .prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('version', ?)")
+      .run(String(REGISTRY_VERSION));
+
+    this.db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS tools_fts USING fts5(
+        id UNINDEXED,
+        tool_name,
+        title,
+        description,
+        url,
+        origin,
+        schema_text,
+        tokenize = 'unicode61'
+      );
+    `);
+  }
+
+  assertFts5() {
+    try {
+      this.db.prepare("SELECT rowid FROM tools_fts LIMIT 1").all();
+    } catch (error) {
+      throw new Error(
+        `SQLite FTS5 is required for registry search but is unavailable: ${error.message}`
+      );
+    }
+  }
+
+  upsertTool(url, tool, now) {
+    const id = registryToolId(url, tool.name);
+    const existing = this.db.prepare("SELECT * FROM tools WHERE id = ?").get(id);
+    const parsedUrl = parseUrl(url);
+    const schemaText = schemaSearchText(tool.inputSchema);
+
+    if (existing) {
+      this.db
+        .prepare(
+          `UPDATE tools
+           SET url = ?,
+               origin = ?,
+               host = ?,
+               tool_name = ?,
+               title = ?,
+               description = ?,
+               input_schema_json = ?,
+               output_schema_json = ?,
+               annotations_json = ?,
+               schema_text = ?,
+               last_seen = ?,
+               discovery_count = discovery_count + 1
+           WHERE id = ?`
+        )
+        .run(
+          url,
+          sqlValue(parsedUrl?.origin),
+          sqlValue(parsedUrl?.host),
+          tool.name,
+          sqlValue(tool.title),
+          sqlValue(tool.description),
+          stringifyJson(tool.inputSchema),
+          stringifyJson(tool.outputSchema),
+          stringifyJson(tool.annotations),
+          schemaText,
+          now,
+          id
+        );
+    } else {
+      this.db
+        .prepare(
+          `INSERT INTO tools (
+             id, url, origin, host, tool_name, title, description,
+             input_schema_json, output_schema_json, annotations_json, schema_text,
+             first_seen, last_seen, discovery_count, use_count
+           )
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)`
+        )
+        .run(
+          id,
+          url,
+          sqlValue(parsedUrl?.origin),
+          sqlValue(parsedUrl?.host),
+          tool.name,
+          sqlValue(tool.title),
+          sqlValue(tool.description),
+          stringifyJson(tool.inputSchema),
+          stringifyJson(tool.outputSchema),
+          stringifyJson(tool.annotations),
+          schemaText,
+          now,
+          now
+        );
+    }
+
+    this.replaceFtsRow({
+      id,
+      toolName: tool.name,
+      title: sqlValue(tool.title),
+      description: sqlValue(tool.description),
+      url,
+      origin: sqlValue(parsedUrl?.origin),
+      schemaText
     });
 
-    return scored
-      .filter((result) => queryTokens.length === 0 || result.score > 0)
-      .sort((a, b) => b.score - a.score || compareRecent(a.entry, b.entry))
-      .slice(0, limit);
+    return rowToEntry(this.db.prepare("SELECT * FROM tools WHERE id = ?").get(id));
+  }
+
+  replaceFtsRow({ id, toolName, title, description, url, origin, schemaText }) {
+    this.db.prepare("DELETE FROM tools_fts WHERE id = ?").run(id);
+    this.db
+      .prepare(
+        `INSERT INTO tools_fts (
+           id, tool_name, title, description, url, origin, schema_text
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(id, toolName, title, description, url, origin, schemaText);
   }
 }
 
@@ -159,37 +307,22 @@ export function defaultRegistryPath() {
       "Library",
       "Application Support",
       "webmcp-relay",
-      "registry.json"
+      "registry.sqlite"
     );
   }
 
   const dataHome = process.env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local", "share");
-  return path.join(dataHome, "webmcp-relay", "registry.json");
+  return path.join(dataHome, "webmcp-relay", "registry.sqlite");
 }
 
-function registryEntryForTool(url, tool, now, existingTools) {
-  const id = registryToolId(url, tool.name);
-  const existing = existingTools[id] ?? {};
-  const parsedUrl = parseUrl(url);
-
-  return {
-    ...existing,
-    id,
-    url,
-    origin: parsedUrl?.origin,
-    host: parsedUrl?.host,
-    toolName: tool.name,
-    title: tool.title,
-    description: tool.description,
-    inputSchema: tool.inputSchema,
-    outputSchema: tool.outputSchema,
-    annotations: tool.annotations,
-    firstSeen: existing.firstSeen ?? now,
-    lastSeen: now,
-    discoveryCount: (existing.discoveryCount ?? 0) + 1,
-    useCount: existing.useCount ?? 0,
-    lastUsed: existing.lastUsed
-  };
+async function loadSqlite() {
+  try {
+    return await import("node:sqlite");
+  } catch (error) {
+    throw new Error(
+      `node:sqlite is required for the WebMCP registry. Use Node.js with node:sqlite support or start with --no-registry. ${error.message}`
+    );
+  }
 }
 
 function registryToolId(url, toolName) {
@@ -211,55 +344,109 @@ function normaliseUrlForId(url) {
   return parsed.toString();
 }
 
-function registrySearchText(entry) {
-  return [
-    entry.toolName,
-    entry.title,
-    entry.description,
-    entry.url,
-    entry.origin,
-    schemaText(entry.inputSchema)
-  ]
-    .filter(Boolean)
-    .join(" ");
+function rowToEntry(row) {
+  return {
+    id: row.id,
+    url: row.url,
+    origin: row.origin,
+    host: row.host,
+    toolName: row.tool_name,
+    title: row.title,
+    description: row.description,
+    inputSchema: parseJson(row.input_schema_json),
+    outputSchema: parseJson(row.output_schema_json),
+    annotations: parseJson(row.annotations_json),
+    firstSeen: row.first_seen,
+    lastSeen: row.last_seen,
+    discoveryCount: row.discovery_count,
+    useCount: row.use_count,
+    lastUsed: row.last_used
+  };
 }
 
-function schemaText(schema) {
+function schemaSearchText(schema) {
   if (!schema || typeof schema !== "object") {
     return "";
   }
 
   const pieces = [];
-  if (schema.description) {
-    pieces.push(schema.description);
-  }
-
-  if (schema.properties && typeof schema.properties === "object") {
-    for (const [name, value] of Object.entries(schema.properties)) {
-      pieces.push(name);
-      if (value && typeof value === "object" && typeof value.description === "string") {
-        pieces.push(value.description);
-      }
-    }
-  }
-
+  appendSchemaText(schema, pieces);
   return pieces.join(" ");
 }
 
-function tokenize(text) {
-  return new Set(
-    String(text)
-      .replace(/([a-z])([A-Z])/g, "$1 $2")
-      .toLowerCase()
-      .split(/[^a-z0-9]+/u)
-      .filter((token) => token.length > 2 && !STOP_WORDS.has(token))
-  );
+function appendSchemaText(schema, pieces, name) {
+  if (!schema || typeof schema !== "object") {
+    return;
+  }
+
+  if (name) {
+    pieces.push(name);
+  }
+
+  if (typeof schema.title === "string") {
+    pieces.push(schema.title);
+  }
+  if (typeof schema.description === "string") {
+    pieces.push(schema.description);
+  }
+  if (Array.isArray(schema.enum)) {
+    pieces.push(...schema.enum.map(String));
+  }
+
+  if (schema.properties && typeof schema.properties === "object") {
+    for (const [propertyName, propertySchema] of Object.entries(schema.properties)) {
+      appendSchemaText(propertySchema, pieces, propertyName);
+    }
+  }
+
+  for (const key of ["items", "additionalProperties"]) {
+    if (schema[key] && typeof schema[key] === "object") {
+      appendSchemaText(schema[key], pieces);
+    }
+  }
+
+  for (const key of ["anyOf", "oneOf", "allOf"]) {
+    if (Array.isArray(schema[key])) {
+      for (const child of schema[key]) {
+        appendSchemaText(child, pieces);
+      }
+    }
+  }
 }
 
-function compareRecent(a, b) {
-  const aDate = a.lastUsed ?? a.lastSeen ?? "";
-  const bDate = b.lastUsed ?? b.lastSeen ?? "";
-  return bDate.localeCompare(aDate);
+function toFtsQuery(query) {
+  const terms = String(query ?? "")
+    .toLowerCase()
+    .match(/[a-z0-9_]{2,}/g);
+
+  if (!terms || terms.length === 0) {
+    return "";
+  }
+
+  return [...new Set(terms)]
+    .slice(0, 20)
+    .map((term) => `${term.replaceAll('"', '""')}*`)
+    .join(" OR ");
+}
+
+function stringifyJson(value) {
+  return value === undefined ? null : JSON.stringify(value);
+}
+
+function sqlValue(value) {
+  return value === undefined ? null : value;
+}
+
+function parseJson(value) {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
 }
 
 function normaliseLimit(limit) {

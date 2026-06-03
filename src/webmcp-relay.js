@@ -102,7 +102,7 @@ Common options:
   --timeout <ms>            Navigation timeout.
   --mcp-package <pkg>       Package spec for npx. Default: chrome-devtools-mcp@latest.
   --server-arg <arg>        Extra argument forwarded to chrome-devtools-mcp. Repeatable.
-  --registry-db <path>      Local registry JSON path. Defaults to the user data directory.
+  --registry-db <path>      Local SQLite registry path. Defaults to the user data directory.
   --no-registry             Disable local registry persistence and global lookup tools.
 `;
 }

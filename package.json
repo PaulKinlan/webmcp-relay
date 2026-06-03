@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "type": "module",
   "description": "STDIO MCP relay that exposes a page's WebMCP tools to agents through Chrome DevTools MCP.",
+  "engines": {
+    "node": ">=22.5"
+  },
   "bin": {
     "webmcp-relay": "./src/webmcp-relay.js"
   },

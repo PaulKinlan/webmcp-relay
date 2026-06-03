@@ -135,6 +135,7 @@ test("searching the registry returns global matches", async () => {
 
   assert.equal(result.structuredContent.matches.length, 1);
   assert.equal(result.structuredContent.matches[0].toolName, "query");
+  assert.equal(typeof result.structuredContent.matches[0].rank, "number");
 });
 
 test("executing a registry tool opens the stored site and calls the tool", async () => {
@@ -226,6 +227,6 @@ class FakeRegistry {
 async function tempRegistry() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "webmcp-relay-test-"));
   return new ToolRegistry({
-    path: path.join(dir, "registry.json")
+    path: path.join(dir, "registry.sqlite")
   });
 }
