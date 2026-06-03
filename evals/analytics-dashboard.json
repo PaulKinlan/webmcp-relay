@@ -1,0 +1,14 @@
+{
+  "id": "analytics-filter-post-errors",
+  "intent": "filter POST server logs with status 500",
+  "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/analytics-dashboard/",
+  "expectedToolNames": ["query"],
+  "input": {
+    "method": "POST",
+    "status": "500",
+    "groupBy": "status",
+    "measure": "count",
+    "chartType": "table"
+  },
+  "expectedOutputIncludes": ["Query applied"]
+}

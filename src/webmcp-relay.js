@@ -3,10 +3,17 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { parseCommonArgs, readValue, splitOption } from "./cli.js";
 import { DevtoolsWebmcpClient } from "./devtools-webmcp-client.js";
+import { runEvalCli } from "./eval-cli.js";
+import { TelemetryStore } from "./telemetry-store.js";
 import { ToolRegistry } from "./tool-registry.js";
 import { WebmcpRelay } from "./webmcp-relay-core.js";
 
 async function main() {
+  if (process.argv[2] === "eval") {
+    await runEvalCli(process.argv.slice(3));
+    return;
+  }
+
   const options = parseArgs(process.argv.slice(2));
 
   if (options.help) {
@@ -19,10 +26,15 @@ async function main() {
     path: options.registryDb,
     enabled: options.registryEnabled
   });
+  const telemetry = new TelemetryStore({
+    path: options.telemetryDb,
+    enabled: options.telemetryEnabled
+  });
   const relay = new WebmcpRelay({
     bridge,
     mode: options.mode,
-    registry
+    registry,
+    telemetry
   });
 
   try {
@@ -43,7 +55,8 @@ function parseArgs(args) {
   const commonArgs = [];
   const extra = {
     mode: "dynamic",
-    registryEnabled: true
+    registryEnabled: true,
+    telemetryEnabled: true
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -67,6 +80,13 @@ function parseArgs(args) {
         break;
       case "--no-registry":
         extra.registryEnabled = false;
+        break;
+      case "--telemetry-db":
+        extra.telemetryDb = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--no-telemetry":
+        extra.telemetryEnabled = false;
         break;
       default:
         commonArgs.push(arg);
@@ -104,6 +124,11 @@ Common options:
   --server-arg <arg>        Extra argument forwarded to chrome-devtools-mcp. Repeatable.
   --registry-db <path>      Local SQLite registry path. Defaults to the user data directory.
   --no-registry             Disable local registry persistence and global lookup tools.
+  --telemetry-db <path>     Local SQLite telemetry path. Defaults to the user data directory.
+  --no-telemetry            Disable local telemetry logging.
+
+Eval:
+  webmcp-relay eval run <case.json...> --report ./report.json
 `;
 }
 

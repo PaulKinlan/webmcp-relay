@@ -167,6 +167,32 @@ test("executing a registry tool opens the stored site and calls the tool", async
   assert.equal((await registry.get(entry.id)).useCount, 1);
 });
 
+test("relay logs telemetry for lookup and execution", async () => {
+  const registry = await tempRegistry();
+  const telemetry = new FakeTelemetry();
+  const relay = new WebmcpRelay({
+    bridge: new FakeBridge(),
+    mode: "dynamic",
+    registry,
+    telemetry
+  });
+
+  await relay.openSite({ url: "https://example.com/logs" }, { notify: false });
+  const search = await relay.callMcpTool(RELAY_TOOL_NAMES.searchRegistry, {
+    query: "query logs"
+  });
+  await relay.callMcpTool(RELAY_TOOL_NAMES.executeRegistryTool, {
+    id: search.structuredContent.matches[0].id,
+    input: {
+      method: "POST"
+    }
+  });
+
+  assert.equal(telemetry.events.some((event) => event.eventType === "open_site"), true);
+  assert.equal(telemetry.events.some((event) => event.eventType === "search_registry"), true);
+  assert.equal(telemetry.events.some((event) => event.eventType === "execute_registry_tool"), true);
+});
+
 class FakeBridge {
   constructor() {
     this.executed = [];
@@ -222,6 +248,19 @@ class FakeRegistry {
   async get() {
     return undefined;
   }
+}
+
+class FakeTelemetry {
+  constructor() {
+    this.enabled = true;
+    this.events = [];
+  }
+
+  async log(event) {
+    this.events.push(event);
+  }
+
+  close() {}
 }
 
 async function tempRegistry() {

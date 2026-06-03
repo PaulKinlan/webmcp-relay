@@ -11,6 +11,7 @@
   },
   "files": [
     "src",
+    "evals",
     "README.md"
   ],
   "scripts": {
@@ -18,6 +19,7 @@
     "relay": "node ./src/webmcp-relay.js",
     "relay:stable": "node ./src/webmcp-relay.js --stable",
     "relay:dynamic": "node ./src/webmcp-relay.js --dynamic",
+    "eval": "node ./src/webmcp-relay.js eval run",
     "test": "node --test"
   },
   "dependencies": {

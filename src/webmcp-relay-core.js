@@ -22,7 +22,7 @@ const EMPTY_OBJECT_SCHEMA = {
 };
 
 export class WebmcpRelay {
-  constructor({ bridge, mode = "stable", registry }) {
+  constructor({ bridge, mode = "stable", registry, telemetry }) {
     if (!bridge) {
       throw new Error("WebmcpRelay requires a DevtoolsWebmcpClient bridge.");
     }
@@ -33,6 +33,7 @@ export class WebmcpRelay {
     this.siteTools = [];
     this.dynamicToolMap = new Map();
     this.registry = registry;
+    this.telemetry = telemetry;
     this.server = new Server(
       {
         name: mode === "dynamic" ? "webmcp-relay" : "webmcp-relay-stable",
@@ -63,6 +64,8 @@ export class WebmcpRelay {
 
   async close() {
     await this.bridge.close();
+    this.registry?.close?.();
+    this.telemetry?.close?.();
     await this.server.close().catch(() => {});
   }
 
@@ -118,45 +121,68 @@ export class WebmcpRelay {
   }
 
   async openSite(args = {}, options = {}) {
-    if (!args.url || typeof args.url !== "string") {
-      throw invalidParams(`${RELAY_TOOL_NAMES.openSite} requires a string url.`);
-    }
-
-    await this.bridge.navigate(args.url, {
-      waitForText: args.waitForText,
-      timeout: args.timeout,
-      pageIdx: args.pageIdx
-    });
-    this.currentUrl = args.url;
-    await this.refreshTools({ notify: false });
-
-    if (options.notify !== false) {
-      this.notifyToolsChanged();
-    }
-
-    return jsonResult(
-      `Opened ${args.url}. Discovered ${this.siteTools.length} WebMCP tool(s).`,
+    return this.withTelemetry(
+      "open_site",
       {
-        url: args.url,
-        tools: this.publicSiteTools()
-      }
+        url: args.url
+      },
+      async () => {
+        if (!args.url || typeof args.url !== "string") {
+          throw invalidParams(`${RELAY_TOOL_NAMES.openSite} requires a string url.`);
+        }
+
+        await this.bridge.navigate(args.url, {
+          waitForText: args.waitForText,
+          timeout: args.timeout,
+          pageIdx: args.pageIdx
+        });
+        this.currentUrl = args.url;
+        await this.refreshTools({ notify: false });
+
+        if (options.notify !== false) {
+          this.notifyToolsChanged();
+        }
+
+        return jsonResult(
+          `Opened ${args.url}. Discovered ${this.siteTools.length} WebMCP tool(s).`,
+          {
+            url: args.url,
+            tools: this.publicSiteTools()
+          }
+        );
+      },
+      () => ({
+        toolCount: this.siteTools.length
+      })
     );
   }
 
   async refreshTools(options = {}) {
-    const { tools } = await this.bridge.listPageTools();
-    this.siteTools = tools;
-    this.rebuildDynamicToolMap();
-    await this.persistCurrentTools();
+    return this.withTelemetry(
+      "refresh_tools",
+      {
+        url: this.currentUrl
+      },
+      async () => {
+        const { tools } = await this.bridge.listPageTools();
+        this.siteTools = tools;
+        this.rebuildDynamicToolMap();
+        await this.persistCurrentTools();
 
-    if (options.notify !== false) {
-      this.notifyToolsChanged();
-    }
+        if (options.notify !== false) {
+          this.notifyToolsChanged();
+        }
 
-    return jsonResult(`Discovered ${this.siteTools.length} WebMCP tool(s).`, {
-      url: this.currentUrl,
-      tools: this.publicSiteTools()
-    });
+        return jsonResult(`Discovered ${this.siteTools.length} WebMCP tool(s).`, {
+          url: this.currentUrl,
+          tools: this.publicSiteTools()
+        });
+      },
+      () => ({
+        toolCount: this.siteTools.length,
+        toolNames: this.siteTools.map((tool) => tool.name)
+      })
+    );
   }
 
   async listSiteTools(args = {}) {
@@ -172,75 +198,121 @@ export class WebmcpRelay {
 
   async callSiteTool(args = {}) {
     const name = args.name ?? args.toolName;
-    if (!name || typeof name !== "string") {
-      throw invalidParams(`${RELAY_TOOL_NAMES.callTool} requires name.`);
-    }
+    return this.withTelemetry(
+      "call_site_tool",
+      {
+        url: this.currentUrl,
+        toolName: name
+      },
+      async () => {
+        if (!name || typeof name !== "string") {
+          throw invalidParams(`${RELAY_TOOL_NAMES.callTool} requires name.`);
+        }
 
-    const result = await this.bridge.executePageTool(name, normaliseToolInput(args.input));
-    await this.recordCurrentToolUse(name, result);
-    return result;
+        const result = await this.bridge.executePageTool(name, normaliseToolInput(args.input));
+        await this.recordCurrentToolUse(name, result);
+        return result;
+      }
+    );
   }
 
   async callDynamicTool(name, args = {}) {
     const siteToolName = this.dynamicToolMap.get(name);
-    if (!siteToolName) {
-      throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
-    }
 
-    const result = await this.bridge.executePageTool(siteToolName, args);
-    await this.recordCurrentToolUse(siteToolName, result);
-    return result;
+    return this.withTelemetry(
+      "call_dynamic_tool",
+      {
+        url: this.currentUrl,
+        toolName: siteToolName ?? name
+      },
+      async () => {
+        if (!siteToolName) {
+          throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+        }
+
+        const result = await this.bridge.executePageTool(siteToolName, args);
+        await this.recordCurrentToolUse(siteToolName, result);
+        return result;
+      },
+      () => ({
+        dynamicName: name
+      })
+    );
   }
 
   async searchRegistry(args = {}) {
-    this.assertRegistry();
+    return this.withTelemetry(
+      "search_registry",
+      {
+        query: args.query ?? args.intent ?? ""
+      },
+      async () => {
+        this.assertRegistry();
 
-    const query = args.query ?? args.intent ?? "";
-    if (typeof query !== "string") {
-      throw invalidParams(`${RELAY_TOOL_NAMES.searchRegistry} requires query to be a string.`);
-    }
+        const query = args.query ?? args.intent ?? "";
+        if (typeof query !== "string") {
+          throw invalidParams(`${RELAY_TOOL_NAMES.searchRegistry} requires query to be a string.`);
+        }
 
-    const matches = await this.registry.search(query, {
-      limit: args.limit
-    });
+        const matches = await this.registry.search(query, {
+          limit: args.limit
+        });
 
-    return jsonResult(`Found ${matches.length} registry match(es).`, {
-      query,
-      registryPath: this.registry.path,
-      matches: matches.map((match) => publicRegistryMatch(match))
-    });
+        return jsonResult(`Found ${matches.length} registry match(es).`, {
+          query,
+          registryPath: this.registry.path,
+          matches: matches.map((match) => publicRegistryMatch(match))
+        });
+      },
+      (result) => ({
+        resultCount: result.structuredContent?.matches?.length ?? 0,
+        topRegistryId: result.structuredContent?.matches?.[0]?.id,
+        topToolName: result.structuredContent?.matches?.[0]?.toolName
+      })
+    );
   }
 
   async executeRegistryTool(args = {}) {
-    this.assertRegistry();
+    return this.withTelemetry(
+      "execute_registry_tool",
+      {
+        registryId: args.id ?? args.toolId
+      },
+      async () => {
+        this.assertRegistry();
 
-    const id = args.id ?? args.toolId;
-    if (!id || typeof id !== "string") {
-      throw invalidParams(`${RELAY_TOOL_NAMES.executeRegistryTool} requires id.`);
-    }
+        const id = args.id ?? args.toolId;
+        if (!id || typeof id !== "string") {
+          throw invalidParams(`${RELAY_TOOL_NAMES.executeRegistryTool} requires id.`);
+        }
 
-    const entry = await this.registry.get(id);
-    if (!entry) {
-      throw invalidParams(`No registry tool found for id: ${id}`);
-    }
+        const entry = await this.registry.get(id);
+        if (!entry) {
+          throw invalidParams(`No registry tool found for id: ${id}`);
+        }
 
-    await this.bridge.navigate(entry.url, {
-      waitForText: args.waitForText,
-      timeout: args.timeout
-    });
-    this.currentUrl = entry.url;
-    await this.refreshTools({ notify: false });
+        await this.bridge.navigate(entry.url, {
+          waitForText: args.waitForText,
+          timeout: args.timeout
+        });
+        this.currentUrl = entry.url;
+        await this.refreshTools({ notify: false });
 
-    const currentTool = this.siteTools.find((tool) => tool.name === entry.toolName);
-    if (!currentTool) {
-      throw invalidParams(
-        `Registry tool ${entry.toolName} was not exposed after opening ${entry.url}.`
-      );
-    }
+        const currentTool = this.siteTools.find((tool) => tool.name === entry.toolName);
+        if (!currentTool) {
+          throw invalidParams(
+            `Registry tool ${entry.toolName} was not exposed after opening ${entry.url}.`
+          );
+        }
 
-    const result = await this.bridge.executePageTool(entry.toolName, normaliseToolInput(args.input));
-    await this.recordRegistryUse(entry.id, result);
-    return result;
+        const result = await this.bridge.executePageTool(entry.toolName, normaliseToolInput(args.input));
+        await this.recordRegistryUse(entry.id, result);
+        return result;
+      },
+      () => ({
+        url: this.currentUrl
+      })
+    );
   }
 
   toDynamicMcpTool(tool) {
@@ -334,6 +406,40 @@ export class WebmcpRelay {
     if (!this.registry || this.registry.enabled === false) {
       throw invalidParams("The WebMCP tool registry is disabled.");
     }
+  }
+
+  async withTelemetry(eventType, baseEvent, action, metadataFn) {
+    const startedAt = performance.now();
+
+    try {
+      const result = await action();
+      await this.logTelemetry({
+        ...baseEvent,
+        eventType,
+        latencyMs: performance.now() - startedAt,
+        isError: result?.isError === true,
+        errorText: result?.isError ? firstTextContent(result) : undefined,
+        metadata: metadataFn ? metadataFn(result) : undefined
+      });
+      return result;
+    } catch (error) {
+      await this.logTelemetry({
+        ...baseEvent,
+        eventType,
+        latencyMs: performance.now() - startedAt,
+        isError: true,
+        errorText: error.message
+      });
+      throw error;
+    }
+  }
+
+  async logTelemetry(event) {
+    if (!this.telemetry || this.telemetry.enabled === false) {
+      return;
+    }
+
+    await this.telemetry.log(event);
   }
 }
 
@@ -614,6 +720,10 @@ function publicRegistryMatch(match) {
     useCount: entry.useCount ?? 0,
     lastUsed: entry.lastUsed
   };
+}
+
+function firstTextContent(result) {
+  return (result?.content ?? []).find((item) => item.type === "text")?.text;
 }
 
 function invalidParams(message) {

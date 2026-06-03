@@ -124,6 +124,71 @@ Disable it:
 npx -y webmcp-relay --no-registry
 ```
 
+## Telemetry And Evals
+
+`webmcp-relay` can log local telemetry events for discovery, lookup, and
+execution. Telemetry is stored in SQLite and stays local.
+
+Logged event types include:
+
+- `open_site`
+- `refresh_tools`
+- `search_registry`
+- `call_site_tool`
+- `call_dynamic_tool`
+- `execute_registry_tool`
+- `eval_case`
+
+The default telemetry path is:
+
+- macOS: `~/Library/Application Support/webmcp-relay/telemetry.sqlite`
+- Linux/other: `$XDG_DATA_HOME/webmcp-relay/telemetry.sqlite` or
+  `~/.local/share/webmcp-relay/telemetry.sqlite`
+
+Override it:
+
+```sh
+npx -y webmcp-relay --telemetry-db /path/to/telemetry.sqlite
+```
+
+Disable it:
+
+```sh
+npx -y webmcp-relay --no-telemetry
+```
+
+Run deterministic evals:
+
+```sh
+npx -y webmcp-relay eval run evals/analytics-dashboard.json \
+  --headless \
+  --channel canary \
+  --report ./reports/latest.json
+```
+
+Eval reports include discovery pass/fail, lookup rank, lookup top-1 rate,
+execution pass/fail, latency, Node version, git SHA, registry DB path, and
+telemetry DB path.
+
+Eval case shape:
+
+```json
+{
+  "id": "analytics-filter-post-errors",
+  "intent": "filter POST server logs with status 500",
+  "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/analytics-dashboard/",
+  "expectedToolNames": ["query"],
+  "input": {
+    "method": "POST",
+    "status": "500",
+    "groupBy": "status",
+    "measure": "count",
+    "chartType": "table"
+  },
+  "expectedOutputIncludes": ["Query applied"]
+}
+```
+
 ## Local Commands
 
 Install:
@@ -142,6 +207,12 @@ Run with an explicit registry DB:
 
 ```sh
 npm run relay -- --headless --channel canary --registry-db ./registry.sqlite
+```
+
+Run the bundled eval:
+
+```sh
+npm run eval -- evals/analytics-dashboard.json --headless --channel canary
 ```
 
 Run stable mode:
@@ -184,6 +255,9 @@ exposed `webmcp_tool_query`.
 Registry lookup was verified by opening the analytics dashboard demo, searching
 for `filter POST server logs`, receiving the stored `query` tool match, then
 executing it via `webmcp_execute_registry_tool`.
+
+Eval runner was verified against `evals/analytics-dashboard.json`; discovery,
+lookup top-1, and execution all passed.
 
 Stable relay was verified by connecting an MCP client over stdio, listing
 `webmcp_open_site,webmcp_refresh_tools,webmcp_list_tools,webmcp_call_tool`,
