@@ -21,6 +21,7 @@
     "relay:dynamic": "node ./src/webmcp-relay.js --dynamic",
     "eval": "node ./src/webmcp-relay.js eval run",
     "eval:all": "node ./src/webmcp-relay.js eval run evals/*.json",
+    "eval:agent": "node ./src/webmcp-relay.js eval agent",
     "test": "node --test"
   },
   "dependencies": {

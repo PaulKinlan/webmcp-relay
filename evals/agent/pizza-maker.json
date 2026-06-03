@@ -1,0 +1,41 @@
+{
+  "id": "agent-pizza-large-bbq",
+  "goal": "Make the pizza large and set its style to BBQ.",
+  "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/pizza-maker/",
+  "maxSteps": 6,
+  "successCriteria": {
+    "mustCallMcpTools": ["webmcp_open_site"],
+    "mustCallWebmcpTools": ["set_pizza_size", "set_pizza_style"],
+    "mustIncludeOutputs": ["Set pizza size to Large", "Changed pizza style to BBQ"]
+  },
+  "scriptedDecisions": [
+    {
+      "action": "call_tool",
+      "toolName": "webmcp_open_site",
+      "arguments": {
+        "url": "https://googlechromelabs.github.io/webmcp-tools/demos/pizza-maker/"
+      },
+      "reason": "Open the WebMCP pizza demo so page tools can be discovered."
+    },
+    {
+      "action": "call_tool",
+      "toolName": "webmcp_tool_set_pizza_size",
+      "arguments": {
+        "size": "Large"
+      },
+      "reason": "Set the pizza size from the discovered dynamic tool."
+    },
+    {
+      "action": "call_tool",
+      "toolName": "webmcp_tool_set_pizza_style",
+      "arguments": {
+        "style": "BBQ"
+      },
+      "reason": "Set the requested pizza style from the discovered dynamic tool."
+    },
+    {
+      "action": "finish",
+      "answer": "The pizza is large and BBQ style."
+    }
+  ]
+}

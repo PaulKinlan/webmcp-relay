@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { parseCommonArgs, readValue, splitOption } from "./cli.js";
+import { runAgentEval } from "./agent-eval.js";
 import { DevtoolsWebmcpClient } from "./devtools-webmcp-client.js";
 import { TelemetryStore } from "./telemetry-store.js";
 import { ToolRegistry } from "./tool-registry.js";
@@ -15,25 +16,22 @@ export async function runEvalCli(args) {
     return;
   }
 
-  if (command !== "run") {
+  if (!["run", "agent"].includes(command)) {
     throw new Error(`Unsupported eval command: ${command}`);
   }
 
-  const options = parseEvalRunArgs(rest);
+  const options = command === "agent"
+    ? parseEvalAgentArgs(rest)
+    : parseEvalRunArgs(rest);
   if (options.help) {
-    process.stdout.write(helpText());
+    process.stdout.write(command === "agent" ? agentHelpText() : helpText());
     return;
   }
 
-  const report = await runEval(options);
-  const text = JSON.stringify(report, null, 2);
-
-  if (options.report) {
-    await fs.mkdir(path.dirname(path.resolve(options.report)), { recursive: true });
-    await fs.writeFile(options.report, `${text}\n`, "utf8");
-  }
-
-  process.stdout.write(`${text}\n`);
+  const report = command === "agent"
+    ? await runAgentEval(options)
+    : await runEval(options);
+  await writeReport(report, options);
 }
 
 export async function runEval(options) {
@@ -251,6 +249,119 @@ function parseEvalRunArgs(args) {
   };
 }
 
+function parseEvalAgentArgs(args) {
+  const commonArgs = [];
+  const caseFiles = [];
+  const extra = {
+    headless: true,
+    telemetryEnabled: true,
+    provider: "openai-compatible",
+    responseFormat: true,
+    maxSteps: 8
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    const { key, inlineValue } = splitOption(arg);
+
+    switch (key) {
+      case "--help":
+      case "-h":
+        extra.help = true;
+        break;
+      case "--report":
+        extra.report = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--registry-db":
+        extra.registryDb = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--telemetry-db":
+        extra.telemetryDb = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--no-telemetry":
+        extra.telemetryEnabled = false;
+        break;
+      case "--provider":
+        extra.provider = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--model":
+        extra.model = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--base-url":
+        extra.baseUrl = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--api-key-env":
+        extra.apiKeyEnv = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--max-steps":
+        extra.maxSteps = Number(readValue(arg, inlineValue, args, ++index));
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--max-result-chars":
+        extra.maxResultChars = Number(readValue(arg, inlineValue, args, ++index));
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--temperature":
+        extra.temperature = Number(readValue(arg, inlineValue, args, ++index));
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--no-response-format":
+        extra.responseFormat = false;
+        break;
+      default:
+        if (COMMON_VALUE_OPTIONS.has(key)) {
+          commonArgs.push(arg);
+          if (inlineValue === undefined) {
+            commonArgs.push(readValue(arg, inlineValue, args, ++index));
+          }
+        } else if (COMMON_BOOLEAN_OPTIONS.has(key)) {
+          commonArgs.push(arg);
+        } else if (arg.startsWith("--")) {
+          throw new Error(`Unknown agent eval option: ${arg}`);
+        } else {
+          caseFiles.push(arg);
+        }
+        break;
+    }
+  }
+
+  if (!["openai-compatible", "scripted"].includes(extra.provider)) {
+    throw new Error(`Unsupported agent eval provider: ${extra.provider}`);
+  }
+  if (!extra.help && caseFiles.length === 0) {
+    throw new Error("eval agent requires at least one agent eval case JSON file.");
+  }
+  if (!Number.isFinite(extra.maxSteps) || extra.maxSteps < 1) {
+    throw new Error("--max-steps must be a positive number.");
+  }
+
+  return {
+    ...parseCommonArgs(commonArgs, {
+      headless: extra.headless
+    }),
+    ...extra,
+    caseFiles
+  };
+}
+
+async function writeReport(report, options) {
+  const text = JSON.stringify(report, null, 2);
+
+  if (options.report) {
+    await fs.mkdir(path.dirname(path.resolve(options.report)), { recursive: true });
+    await fs.writeFile(options.report, `${text}\n`, "utf8");
+  }
+
+  process.stdout.write(`${text}\n`);
+}
+
 const COMMON_VALUE_OPTIONS = new Set([
   "--url",
   "--wait-for-text",
@@ -421,6 +532,7 @@ async function gitSha() {
 function helpText() {
   return `Usage:
   webmcp-relay eval run <case.json...> [options]
+  webmcp-relay eval agent <agent-case.json...> [options]
 
 Options:
   --report <path>           Write JSON report to a file.
@@ -439,6 +551,46 @@ Case shape:
     "expectedToolNames": ["query"],
     "input": { "...": "..." },
     "expectedOutputIncludes": ["Query applied"]
+}
+`;
+}
+
+function agentHelpText() {
+  return `Usage:
+  webmcp-relay eval agent <case.json...> [options]
+
+This runs an LLM-in-the-loop agent against webmcp-relay over MCP. The transcript
+records MCP listTools, callTool, tools/list_changed notifications, LLM decisions,
+tool arguments, tool results, and scoring.
+
+Provider options:
+  --provider <name>         openai-compatible or scripted. Default: openai-compatible.
+  --model <name>            Model for openai-compatible chat completions.
+  --base-url <url>          API base URL. Default: OPENAI_BASE_URL or https://api.openai.com/v1.
+  --api-key-env <name>      Environment variable containing the API key. Default: OPENAI_API_KEY.
+  --temperature <number>    Default: 0.
+  --no-response-format      Do not send response_format={"type":"json_object"}.
+
+Run options:
+  --report <path>           Write JSON report to a file.
+  --registry-db <path>      SQLite registry path for the eval run.
+  --telemetry-db <path>     SQLite telemetry path for the eval run.
+  --no-telemetry            Disable telemetry events during eval.
+  --max-steps <number>      Max LLM decisions per case. Default: 8.
+  --headless                Launch Chrome headlessly. Default for eval.
+  --channel <name>          Chrome channel for chrome-devtools-mcp to launch.
+  --timeout <ms>            Navigation timeout.
+
+Case shape:
+  {
+    "id": "agent-pizza-large-bbq",
+    "goal": "Make the pizza large and set its style to BBQ.",
+    "siteUrl": "https://...",
+    "successCriteria": {
+      "mustCallMcpTools": ["webmcp_open_site"],
+      "mustCallWebmcpTools": ["set_pizza_size", "set_pizza_style"],
+      "mustIncludeOutputs": ["Set pizza size to Large", "Changed pizza style to BBQ"]
+    }
   }
 `;
 }

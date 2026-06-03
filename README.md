@@ -183,9 +183,9 @@ Run all bundled evals:
 npm run eval:all -- --headless --channel canary --report ./reports/latest.json
 ```
 
-Eval reports include discovery pass/fail, lookup rank, lookup top-1 rate,
-execution pass/fail, latency, Node version, git SHA, registry DB path, and
-telemetry DB path.
+These deterministic evals do not use an LLM. They verify browser discovery,
+registry lookup, execution plumbing, latency, Node version, git SHA, registry DB
+path, and telemetry DB path.
 
 Eval case shape:
 
@@ -209,6 +209,52 @@ Eval case shape:
 
 `expectedUrlIncludes` is optional but useful when different sites expose tools
 with the same name, for example `search_location`.
+
+Run LLM-in-the-loop agent evals:
+
+```sh
+OPENAI_API_KEY=... npm run eval:agent -- evals/agent/pizza-maker.json \
+  --headless \
+  --channel canary \
+  --model "$WEBMCP_RELAY_AGENT_MODEL" \
+  --report ./reports/agent-latest.json
+```
+
+Agent evals connect an MCP client to `webmcp-relay`, give the LLM a goal and the
+current MCP tool list, and ask it to return one JSON decision per step:
+`list_tools`, `call_tool`, or `finish`. Reports include the actual MCP
+`listTools` calls, `callTool` calls, `tools/list_changed` notifications, tool
+arguments, tool output, LLM decisions, and scoring.
+
+Agent case shape:
+
+```json
+{
+  "id": "agent-pizza-large-bbq",
+  "goal": "Make the pizza large and set its style to BBQ.",
+  "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/pizza-maker/",
+  "successCriteria": {
+    "mustCallMcpTools": ["webmcp_open_site"],
+    "mustCallWebmcpTools": ["set_pizza_size", "set_pizza_style"],
+    "mustIncludeOutputs": ["Set pizza size to Large", "Changed pizza style to BBQ"]
+  }
+}
+```
+
+For global lookup behavior, an agent case can seed the local registry first:
+
+```json
+{
+  "id": "agent-registry-leather-return-policy",
+  "goal": "Using tools that may have been discovered previously, check the return policy.",
+  "seedSites": ["https://googlechromelabs.github.io/webmcp-tools/demos/leather-bag"],
+  "resetUrl": "https://example.com/",
+  "successCriteria": {
+    "mustCallMcpTools": ["webmcp_search_registry", "webmcp_execute_registry_tool"],
+    "mustIncludeOutputs": ["30-Day Guarantee"]
+  }
+}
+```
 
 ## Local Commands
 
@@ -246,6 +292,12 @@ Run the full bundled eval suite:
 
 ```sh
 npm run eval:all -- --headless --channel canary
+```
+
+Run an LLM-in-the-loop agent eval:
+
+```sh
+npm run eval:agent -- evals/agent/pizza-maker.json --headless --channel canary --model "$WEBMCP_RELAY_AGENT_MODEL"
 ```
 
 Run stable mode:

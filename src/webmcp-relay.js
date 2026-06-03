@@ -135,6 +135,7 @@ Common options:
 
 Eval:
   webmcp-relay eval run <case.json...> --report ./report.json
+  webmcp-relay eval agent <agent-case.json...> --model <model> --report ./agent-report.json
 
 Registry:
   webmcp-relay registry list --registry-db ./registry.sqlite

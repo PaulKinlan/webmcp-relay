@@ -1,0 +1,13 @@
+{
+  "id": "agent-registry-leather-return-policy",
+  "goal": "Using tools that may have been discovered previously, check whether leather products can be returned within 30 days.",
+  "seedSites": [
+    "https://googlechromelabs.github.io/webmcp-tools/demos/leather-bag"
+  ],
+  "resetUrl": "https://example.com/",
+  "maxSteps": 6,
+  "successCriteria": {
+    "mustCallMcpTools": ["webmcp_search_registry", "webmcp_execute_registry_tool"],
+    "mustIncludeOutputs": ["30-Day Guarantee", "full refund or exchange"]
+  }
+}
