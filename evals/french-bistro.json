@@ -1,0 +1,7 @@
+{
+  "id": "bistro-reservation-tool-discovery",
+  "intent": "book a terrace table at Le Petit Bistro for two people",
+  "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/french-bistro/",
+  "expectedToolNames": ["book_table_le_petit_bistro"],
+  "expectedUrlIncludes": "french-bistro"
+}

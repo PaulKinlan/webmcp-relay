@@ -1,0 +1,16 @@
+{
+  "id": "hotel-search-paris-spa",
+  "intent": "find a Paris hotel and apply search filters for a spa trip",
+  "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/hotel-chain/",
+  "expectedToolNames": ["search_location"],
+  "expectedUrlIncludes": "hotel-chain",
+  "input": {
+    "query": "Paris",
+    "checkin_date": "2030-06-12",
+    "nights": 2,
+    "adults": 2,
+    "kids": 0,
+    "pets": 0
+  },
+  "expectedOutputIncludes": ["Navigated to search results for Paris"]
+}

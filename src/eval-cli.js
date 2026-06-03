@@ -116,9 +116,14 @@ async function runEvalCase(relay, telemetry, testCase, options) {
       limit: testCase.limit ?? 10
     });
     const matches = lookupResult.structuredContent?.matches ?? [];
+    const expectedUrlIncludes = normaliseExpectedList(testCase.expectedUrlIncludes);
+    const expectedRegistryIds = normaliseExpectedList(testCase.expectedRegistryIds);
     const expectedMatchIndex = matches.findIndex((match) =>
-      expectedToolNames.includes(match.toolName) ||
-      (testCase.expectedRegistryIds ?? []).includes(match.id)
+      matchesExpectedRegistryEntry(match, {
+        expectedToolNames,
+        expectedUrlIncludes,
+        expectedRegistryIds
+      })
     );
     const selectedMatch =
       expectedMatchIndex >= 0 ? matches[expectedMatchIndex] : matches[0];
@@ -128,7 +133,9 @@ async function runEvalCase(relay, telemetry, testCase, options) {
       rank: expectedMatchIndex >= 0 ? expectedMatchIndex + 1 : null,
       topToolName: matches[0]?.toolName,
       topRegistryId: matches[0]?.id,
+      expectedUrlIncludes,
       selectedRegistryId: selectedMatch?.id,
+      selectedUrl: selectedMatch?.url,
       latencyMs: performance.now() - lookupStarted,
       matches: matches.map((match) => ({
         id: match.id,
@@ -326,18 +333,59 @@ function phaseSuccess(phase) {
 }
 
 function resultText(result) {
-  return (result.content ?? [])
+  const text = (result.content ?? [])
     .filter((item) => item.type === "text")
     .map((item) => item.text)
     .join("\n");
+
+  if (text) {
+    return text;
+  }
+
+  const fallback = {
+    structuredContent: result.structuredContent,
+    _meta: result._meta
+  };
+  return JSON.stringify(fallback);
 }
 
 function normaliseExpectedOutput(value) {
+  return normaliseExpectedList(value);
+}
+
+function normaliseExpectedList(value) {
   if (!value) {
     return [];
   }
 
   return Array.isArray(value) ? value.map(String) : [String(value)];
+}
+
+function matchesExpectedRegistryEntry(
+  match,
+  { expectedToolNames, expectedUrlIncludes, expectedRegistryIds }
+) {
+  if (!match) {
+    return false;
+  }
+
+  if (expectedRegistryIds.includes(match.id)) {
+    return true;
+  }
+
+  const hasExpectedToolNames = expectedToolNames.length > 0;
+  const hasExpectedUrls = expectedUrlIncludes.length > 0;
+
+  if (!hasExpectedToolNames && !hasExpectedUrls) {
+    return false;
+  }
+
+  const toolNameMatches =
+    !hasExpectedToolNames || expectedToolNames.includes(match.toolName);
+  const urlMatches =
+    !hasExpectedUrls || expectedUrlIncludes.some((text) => match.url?.includes(text));
+
+  return toolNameMatches && urlMatches;
 }
 
 function tempSqlitePath(name) {

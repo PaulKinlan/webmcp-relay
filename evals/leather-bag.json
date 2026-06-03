@@ -1,0 +1,24 @@
+{
+  "cases": [
+    {
+      "id": "leather-return-policy",
+      "intent": "check whether leather products can be returned within 30 days",
+      "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/leather-bag",
+      "expectedToolNames": ["check_return_policy"],
+      "expectedUrlIncludes": "leather-bag",
+      "input": {},
+      "expectedOutputIncludes": ["30-Day Guarantee", "full refund or exchange"]
+    },
+    {
+      "id": "leather-search-handmade-bag",
+      "intent": "search the store for a handmade leather bag",
+      "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/leather-bag",
+      "expectedToolNames": ["search_store"],
+      "expectedUrlIncludes": "leather-bag",
+      "input": {
+        "query": "handmade leather bag"
+      },
+      "expectedOutputIncludes": ["Navigated to search results for handmade leather bag"]
+    }
+  ]
+}

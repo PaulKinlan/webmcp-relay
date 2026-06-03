@@ -1,0 +1,11 @@
+{
+  "id": "smart-home-show-front-door-camera",
+  "intent": "someone is at the front door so show the door camera",
+  "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/smart-home",
+  "expectedToolNames": ["rearrangeDOMComponents"],
+  "expectedUrlIncludes": "smart-home",
+  "input": {
+    "componentIds": ["front-door-camera"]
+  },
+  "expectedOutputIncludes": ["Dashboard successfully updated"]
+}

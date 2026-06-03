@@ -3,6 +3,7 @@
   "intent": "filter POST server logs with status 500",
   "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/analytics-dashboard/",
   "expectedToolNames": ["query"],
+  "expectedUrlIncludes": "analytics-dashboard",
   "input": {
     "method": "POST",
     "status": "500",

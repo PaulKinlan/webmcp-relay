@@ -1,0 +1,16 @@
+{
+  "id": "flight-search-lon-nyc-round-trip",
+  "intent": "search return flights from London to New York for two passengers",
+  "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/react-flightsearch/",
+  "expectedToolNames": ["searchFlights"],
+  "expectedUrlIncludes": "react-flightsearch",
+  "input": {
+    "origin": "LON",
+    "destination": "NYC",
+    "tripType": "round-trip",
+    "outboundDate": "2030-06-08",
+    "inboundDate": "2030-06-15",
+    "passengers": 2
+  },
+  "expectedOutputIncludes": ["A new flight search was started"]
+}

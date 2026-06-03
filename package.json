@@ -20,6 +20,7 @@
     "relay:stable": "node ./src/webmcp-relay.js --stable",
     "relay:dynamic": "node ./src/webmcp-relay.js --dynamic",
     "eval": "node ./src/webmcp-relay.js eval run",
+    "eval:all": "node ./src/webmcp-relay.js eval run evals/*.json",
     "test": "node --test"
   },
   "dependencies": {

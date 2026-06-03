@@ -177,6 +177,12 @@ npx -y webmcp-relay eval run evals/analytics-dashboard.json \
   --report ./reports/latest.json
 ```
 
+Run all bundled evals:
+
+```sh
+npm run eval:all -- --headless --channel canary --report ./reports/latest.json
+```
+
 Eval reports include discovery pass/fail, lookup rank, lookup top-1 rate,
 execution pass/fail, latency, Node version, git SHA, registry DB path, and
 telemetry DB path.
@@ -189,6 +195,7 @@ Eval case shape:
   "intent": "filter POST server logs with status 500",
   "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/analytics-dashboard/",
   "expectedToolNames": ["query"],
+  "expectedUrlIncludes": "analytics-dashboard",
   "input": {
     "method": "POST",
     "status": "500",
@@ -199,6 +206,9 @@ Eval case shape:
   "expectedOutputIncludes": ["Query applied"]
 }
 ```
+
+`expectedUrlIncludes` is optional but useful when different sites expose tools
+with the same name, for example `search_location`.
 
 ## Local Commands
 
@@ -230,6 +240,12 @@ Run the bundled eval:
 
 ```sh
 npm run eval -- evals/analytics-dashboard.json --headless --channel canary
+```
+
+Run the full bundled eval suite:
+
+```sh
+npm run eval:all -- --headless --channel canary
 ```
 
 Run stable mode:

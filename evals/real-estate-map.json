@@ -1,0 +1,11 @@
+{
+  "id": "real-estate-austin-location-lookup",
+  "intent": "find apartments in Austin on the real estate map",
+  "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/real-estate-map",
+  "expectedToolNames": ["search_location"],
+  "expectedUrlIncludes": "real-estate-map",
+  "input": {
+    "location": "Austin"
+  },
+  "expectedOutputIncludes": ["Completed"]
+}

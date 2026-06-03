@@ -1,0 +1,22 @@
+{
+  "cases": [
+    {
+      "id": "coffee-machine-fits-under-cabinet",
+      "intent": "check whether the Alchemist espresso machine fits under a 15 inch cabinet",
+      "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/coffee-shop",
+      "expectedToolNames": ["get_machine_specifications"],
+      "expectedUrlIncludes": "coffee-shop",
+      "input": {},
+      "expectedOutputIncludes": ["The Alchemist", "12 inches", "15-inch cabinets"]
+    },
+    {
+      "id": "coffee-usual-beans-history",
+      "intent": "find my usual coffee beans from past orders so I can reorder them",
+      "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/coffee-shop",
+      "expectedToolNames": ["get_order_history"],
+      "expectedUrlIncludes": "coffee-shop",
+      "input": {},
+      "expectedOutputIncludes": ["Classic Dark Roast", "DR-001"]
+    }
+  ]
+}

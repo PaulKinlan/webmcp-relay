@@ -1,0 +1,33 @@
+{
+  "cases": [
+    {
+      "id": "pizza-set-large-size",
+      "intent": "make the pizza large for a group",
+      "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/pizza-maker/",
+      "expectedToolNames": ["set_pizza_size"],
+      "expectedUrlIncludes": "pizza-maker",
+      "input": {
+        "size": "Large"
+      },
+      "expectedOutputIncludes": ["Set pizza size to Large"]
+    },
+    {
+      "id": "pizza-set-bbq-style",
+      "intent": "change the pizza style to BBQ",
+      "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/pizza-maker/",
+      "expectedToolNames": ["set_pizza_style"],
+      "expectedUrlIncludes": "pizza-maker",
+      "input": {
+        "style": "BBQ"
+      },
+      "expectedOutputIncludes": ["Changed pizza style to BBQ"]
+    },
+    {
+      "id": "pizza-share-link-discovery",
+      "intent": "get a shareable link for the current pizza",
+      "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/pizza-maker/",
+      "expectedToolNames": ["share_pizza"],
+      "expectedUrlIncludes": "pizza-maker"
+    }
+  ]
+}

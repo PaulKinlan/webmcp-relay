@@ -1,0 +1,11 @@
+{
+  "id": "ticket-query-horror-movies",
+  "intent": "find horror movies with available showtimes",
+  "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/ticket-booking/",
+  "expectedToolNames": ["query_content"],
+  "expectedUrlIncludes": "ticket-booking",
+  "input": {
+    "genre": "horror"
+  },
+  "expectedOutputIncludes": ["The Boogeyman", "Whispers in the Dark"]
+}

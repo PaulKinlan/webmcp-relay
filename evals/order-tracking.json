@@ -1,0 +1,11 @@
+{
+  "id": "order-status-last-seven-days",
+  "intent": "check orders from the last seven days and tell me their shipping status",
+  "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/order-tracking/",
+  "expectedToolNames": ["get_order_status"],
+  "expectedUrlIncludes": "order-tracking",
+  "input": {
+    "timeframe": "last_7_days"
+  },
+  "expectedOutputIncludes": ["ORD123", "Delivered", "ORD456"]
+}
