@@ -587,7 +587,7 @@ Case shape:
     "goal": "Make the pizza large and set its style to BBQ.",
     "siteUrl": "https://...",
     "successCriteria": {
-      "mustCallMcpTools": ["webmcp_open_site"],
+      "mustCallMcpTools": ["open_page"],
       "mustCallWebmcpTools": ["set_pizza_size", "set_pizza_style"],
       "mustIncludeOutputs": ["Set pizza size to Large", "Changed pizza style to BBQ"]
     }

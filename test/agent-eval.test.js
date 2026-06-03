@@ -8,7 +8,7 @@ test("agent decision parser accepts fenced JSON decisions", () => {
   const decision = parseAgentDecision(`\`\`\`json
   {
     "action": "call_tool",
-    "toolName": "webmcp_open_site",
+    "toolName": "open_page",
     "arguments": {
       "url": "https://example.com"
     },
@@ -18,7 +18,7 @@ test("agent decision parser accepts fenced JSON decisions", () => {
 
   assert.deepEqual(decision, {
     action: "call_tool",
-    toolName: "webmcp_open_site",
+    toolName: "open_page",
     arguments: {
       url: "https://example.com"
     },
@@ -31,7 +31,7 @@ test("agent transcript scorer checks MCP calls, WebMCP calls, output, and finish
   const score = scoreAgentTranscript(
     {
       successCriteria: {
-        mustCallMcpTools: ["webmcp_open_site"],
+        mustCallMcpTools: ["open_page"],
         mustCallWebmcpTools: ["set_pizza_size"],
         mustIncludeOutputs: ["Set pizza size to Large"]
       }
@@ -39,7 +39,7 @@ test("agent transcript scorer checks MCP calls, WebMCP calls, output, and finish
     [
       {
         type: "call_tool",
-        name: "webmcp_open_site",
+        name: "open_page",
         arguments: {
           url: "https://example.com"
         },

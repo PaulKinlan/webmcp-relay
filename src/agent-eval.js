@@ -113,7 +113,7 @@ async function runAgentEvalCase(testCase, options) {
     if (testCase.seedSites?.length > 0) {
       for (const url of testCase.seedSites) {
         await callMcpTool(client, transcript, {
-          toolName: "webmcp_open_site",
+          toolName: "open_page",
           arguments: {
             url,
             timeout: options.navigationTimeout
@@ -127,7 +127,7 @@ async function runAgentEvalCase(testCase, options) {
 
     if (testCase.resetUrl) {
       await callMcpTool(client, transcript, {
-        toolName: "webmcp_open_site",
+        toolName: "open_page",
         arguments: {
           url: testCase.resetUrl,
           timeout: options.navigationTimeout
@@ -338,7 +338,7 @@ function agentSystemPrompt() {
     "You are controlling an MCP client connected to webmcp-relay.",
     "Choose exactly one next action and return only JSON.",
     "You can list MCP tools, call one available MCP tool, or finish.",
-    "If a siteUrl is supplied, normally call webmcp_open_site first to discover page WebMCP tools.",
+    "If a siteUrl is supplied, normally call open_page first to navigate and discover page WebMCP tools.",
     "After opening a WebMCP page, dynamic tools may appear. Prefer direct dynamic tools such as webmcp_tool_set_pizza_size when they are available.",
     "Use webmcp_search_registry and webmcp_execute_registry_tool when the task refers to tools discovered over time or pre-seeded registry tools.",
     "Use schemas exactly, including enum values and required fields.",

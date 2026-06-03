@@ -8,6 +8,7 @@ import {
 import { describeArgs, noopLogger } from "./logger.js";
 
 export const RELAY_TOOL_NAMES = {
+  openPage: "open_page",
   openSite: "webmcp_open_site",
   refreshTools: "webmcp_refresh_tools",
   listTools: "webmcp_list_tools",
@@ -49,8 +50,8 @@ export class WebmcpRelay {
         },
         instructions:
           mode === "dynamic"
-            ? "Open a WebMCP-enabled page with webmcp_open_site. The server exposes discovered page tools directly and emits tools/list_changed when they change. Use webmcp_search_registry to find tools discovered across sites and webmcp_execute_registry_tool to run them."
-            : "Open a WebMCP-enabled page with webmcp_open_site, inspect tools with webmcp_list_tools, call them with webmcp_call_tool, or use webmcp_search_registry for tools discovered across sites."
+            ? "When the user asks to open, visit, go to, load, or navigate to a URL or website, call open_page. This opens Chrome, discovers page WebMCP tools, exposes them directly, and emits tools/list_changed when they change. webmcp_open_site is kept as a compatibility alias. Use webmcp_search_registry to find tools discovered across sites and webmcp_execute_registry_tool to run them."
+            : "When the user asks to open, visit, go to, load, or navigate to a URL or website, call open_page. Inspect tools with webmcp_list_tools, call them with webmcp_call_tool, or use webmcp_search_registry for tools discovered across sites. webmcp_open_site is kept as a compatibility alias."
       }
     );
 
@@ -110,6 +111,7 @@ export class WebmcpRelay {
 
   listMcpTools() {
     const tools = [
+      openPageTool(),
       openSiteTool(),
       refreshToolsTool(),
       listSiteToolsTool(),
@@ -134,6 +136,7 @@ export class WebmcpRelay {
     });
 
     switch (name) {
+      case RELAY_TOOL_NAMES.openPage:
       case RELAY_TOOL_NAMES.openSite:
         return this.openSite(args);
       case RELAY_TOOL_NAMES.refreshTools:
@@ -159,7 +162,9 @@ export class WebmcpRelay {
       },
       async () => {
         if (!args.url || typeof args.url !== "string") {
-          throw invalidParams(`${RELAY_TOOL_NAMES.openSite} requires a string url.`);
+          throw invalidParams(
+            `${RELAY_TOOL_NAMES.openPage} requires a string url.`
+          );
         }
 
         await this.bridge.navigate(args.url, {
@@ -545,33 +550,13 @@ export function dynamicMcpToolName(siteToolName, usedNames = new Set()) {
   return `${base}_${counter}`;
 }
 
-function openSiteTool() {
+function openPageTool() {
   return {
-    name: RELAY_TOOL_NAMES.openSite,
-    description: "Navigate Chrome to a WebMCP-enabled page and discover its tools.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        url: {
-          type: "string",
-          description: "Page URL to open."
-        },
-        waitForText: {
-          type: "string",
-          description: "Optional visible text to wait for after navigation."
-        },
-        timeout: {
-          type: "number",
-          description: "Navigation timeout in milliseconds."
-        },
-        pageIdx: {
-          type: "number",
-          description: "Optional Chrome DevTools MCP page index."
-        }
-      },
-      required: ["url"],
-      additionalProperties: false
-    },
+    name: RELAY_TOOL_NAMES.openPage,
+    title: "Open Page",
+    description:
+      "Open, visit, browse, go to, load, or navigate Chrome to a URL or website. Use this for ordinary navigation requests; it also discovers any WebMCP tools exposed by the page.",
+    inputSchema: navigationInputSchema(),
     annotations: {
       readOnlyHint: false,
       openWorldHint: true
@@ -579,6 +564,49 @@ function openSiteTool() {
     execution: {
       taskSupport: "forbidden"
     }
+  };
+}
+
+function openSiteTool() {
+  return {
+    name: RELAY_TOOL_NAMES.openSite,
+    title: "Open WebMCP Site",
+    description:
+      "Compatibility alias for open_page. Opens or navigates Chrome to a URL, then discovers WebMCP tools on the page.",
+    inputSchema: navigationInputSchema(),
+    annotations: {
+      readOnlyHint: false,
+      openWorldHint: true
+    },
+    execution: {
+      taskSupport: "forbidden"
+    }
+  };
+}
+
+function navigationInputSchema() {
+  return {
+    type: "object",
+    properties: {
+      url: {
+        type: "string",
+        description: "URL or website to open, visit, go to, load, or navigate to."
+      },
+      waitForText: {
+        type: "string",
+        description: "Optional visible text to wait for after navigation."
+      },
+      timeout: {
+        type: "number",
+        description: "Navigation timeout in milliseconds."
+      },
+      pageIdx: {
+        type: "number",
+        description: "Optional Chrome DevTools MCP page index."
+      }
+    },
+    required: ["url"],
+    additionalProperties: false
   };
 }
 

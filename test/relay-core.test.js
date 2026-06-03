@@ -14,11 +14,42 @@ test("stable relay exposes only wrapper tools", () => {
 
   const toolNames = relay.listMcpTools().map((tool) => tool.name);
   assert.deepEqual(toolNames, [
+    RELAY_TOOL_NAMES.openPage,
     RELAY_TOOL_NAMES.openSite,
     RELAY_TOOL_NAMES.refreshTools,
     RELAY_TOOL_NAMES.listTools,
     RELAY_TOOL_NAMES.callTool
   ]);
+});
+
+test("relay exposes a natural open_page navigation tool before compatibility aliases", () => {
+  const relay = new WebmcpRelay({
+    bridge: new FakeBridge(),
+    mode: "dynamic"
+  });
+
+  const [firstTool, secondTool] = relay.listMcpTools();
+  assert.equal(firstTool.name, RELAY_TOOL_NAMES.openPage);
+  assert.equal(secondTool.name, RELAY_TOOL_NAMES.openSite);
+  assert.match(firstTool.description, /open/i);
+  assert.match(firstTool.description, /navigate/i);
+  assert.match(firstTool.description, /visit/i);
+});
+
+test("open_page dispatches to page navigation and discovery", async () => {
+  const bridge = new FakeBridge();
+  const relay = new WebmcpRelay({
+    bridge,
+    mode: "dynamic"
+  });
+
+  const result = await relay.callMcpTool(RELAY_TOOL_NAMES.openPage, {
+    url: "https://example.com/natural-navigation"
+  });
+
+  assert.equal(bridge.url, "https://example.com/natural-navigation");
+  assert.equal(result.structuredContent.tools.length, 1);
+  assert.equal(result.structuredContent.tools[0].name, "query");
 });
 
 test("dynamic relay exposes discovered page tools as MCP tools", async () => {

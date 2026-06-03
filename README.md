@@ -57,6 +57,7 @@ By default, `webmcp-relay` runs in dynamic mode.
 
 Dynamic mode exposes wrapper tools first:
 
+- `open_page`
 - `webmcp_open_site`
 - `webmcp_refresh_tools`
 - `webmcp_list_tools`
@@ -64,9 +65,10 @@ Dynamic mode exposes wrapper tools first:
 - `webmcp_search_registry`
 - `webmcp_execute_registry_tool`
 
-After `webmcp_open_site`, it calls Chrome DevTools MCP `list_webmcp_tools`,
+After `open_page`, it calls Chrome DevTools MCP `list_webmcp_tools`,
 rebuilds its MCP tool list, and sends `notifications/tools/list_changed`.
 Clients that refresh tools will then see page tools such as `webmcp_tool_query`.
+`webmcp_open_site` remains available as a compatibility alias.
 
 Stable mode is available for clients that do not support dynamic tool-list
 refresh:
@@ -90,7 +92,8 @@ its own ranking algorithm.
 
 Discovery updates:
 
-- `webmcp_open_site` discovers the page's tools and stores them.
+- `open_page` discovers the page's tools and stores them.
+- `webmcp_open_site` is a compatibility alias for `open_page`.
 - `webmcp_refresh_tools` refreshes the active page's tools and stores them.
 
 Use updates:
@@ -280,7 +283,7 @@ Agent case shape:
   "goal": "Make the pizza large and set its style to BBQ.",
   "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/pizza-maker/",
   "successCriteria": {
-    "mustCallMcpTools": ["webmcp_open_site"],
+    "mustCallMcpTools": ["open_page"],
     "mustCallWebmcpTools": ["set_pizza_size", "set_pizza_style"],
     "mustIncludeOutputs": ["Set pizza size to Large", "Changed pizza style to BBQ"]
   }
@@ -380,7 +383,7 @@ Chrome Canary 150 works for both list and execute.
 ## Verified Locally
 
 Dynamic relay was verified by connecting an MCP client over stdio, calling
-`webmcp_open_site`, receiving `tools/list_changed`, then calling the dynamically
+`open_page`, receiving `tools/list_changed`, then calling the dynamically
 exposed `webmcp_tool_query`.
 
 Registry lookup was verified by opening the analytics dashboard demo, searching
@@ -391,7 +394,7 @@ Eval runner was verified against `evals/analytics-dashboard.json`; discovery,
 lookup top-1, and execution all passed.
 
 Stable relay was verified by connecting an MCP client over stdio, listing
-`webmcp_open_site,webmcp_refresh_tools,webmcp_list_tools,webmcp_call_tool`,
+`open_page,webmcp_open_site,webmcp_refresh_tools,webmcp_list_tools,webmcp_call_tool`,
 discovering the page tool `query`, and calling it.
 
 ## Test

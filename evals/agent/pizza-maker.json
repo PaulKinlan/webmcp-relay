@@ -4,14 +4,14 @@
   "siteUrl": "https://googlechromelabs.github.io/webmcp-tools/demos/pizza-maker/",
   "maxSteps": 6,
   "successCriteria": {
-    "mustCallMcpTools": ["webmcp_open_site"],
+    "mustCallMcpTools": ["open_page"],
     "mustCallWebmcpTools": ["set_pizza_size", "set_pizza_style"],
     "mustIncludeOutputs": ["Set pizza size to Large", "Changed pizza style to BBQ"]
   },
   "scriptedDecisions": [
     {
       "action": "call_tool",
-      "toolName": "webmcp_open_site",
+      "toolName": "open_page",
       "arguments": {
         "url": "https://googlechromelabs.github.io/webmcp-tools/demos/pizza-maker/"
       },

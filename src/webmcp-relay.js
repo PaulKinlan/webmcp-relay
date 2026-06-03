@@ -167,7 +167,7 @@ function helpText() {
   webmcp-relay --dynamic
 
 Modes:
-  --stable       Expose wrapper tools only: webmcp_open_site, webmcp_list_tools, webmcp_call_tool.
+  --stable       Expose wrapper tools including open_page, webmcp_list_tools, and webmcp_call_tool.
   --dynamic      Also expose discovered page WebMCP tools as MCP tools and send tools/list_changed. Default.
 
 Common options:
