@@ -200,11 +200,12 @@ function printToolTable(entries, options = {}) {
     origin: entry.origin ?? "",
     uses: String(entry.useCount ?? 0),
     rank: entry.rank === null || entry.rank === undefined ? "" : entry.rank.toExponential(3),
+    description: firstLine(entry.description),
     url: entry.url
   }));
   const columns = options.includeRank
-    ? ["id", "tool", "origin", "uses", "rank", "url"]
-    : ["id", "tool", "origin", "uses", "url"];
+    ? ["id", "tool", "origin", "uses", "rank", "description", "url"]
+    : ["id", "tool", "origin", "uses", "description", "url"];
 
   printTable(rows, columns);
 }
@@ -229,6 +230,10 @@ function printTable(rows, columns) {
 
 function pad(value, width) {
   return value.length >= width ? value : `${value}${" ".repeat(width - value.length)}`;
+}
+
+function firstLine(value) {
+  return String(value ?? "").split(/\r?\n/)[0].trim();
 }
 
 function printJson(value) {

@@ -33,6 +33,17 @@ test("registry CLI lists, searches, shows, and stats tools as JSON", async () =>
   assert.equal(stats.urlCount, 1);
 });
 
+test("registry CLI list includes tool descriptions in human output", async () => {
+  const registryPath = await seededRegistryPath();
+
+  const output = await captureStdout(() =>
+    runRegistryCli(["list", "--registry-db", registryPath])
+  );
+
+  assert.match(output, /description/);
+  assert.match(output, /Filter server logs by status and method/);
+});
+
 async function seededRegistryPath() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "webmcp-registry-cli-test-"));
   const registryPath = path.join(dir, "registry.sqlite");
