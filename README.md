@@ -124,6 +124,17 @@ Disable it:
 npx -y webmcp-relay --no-registry
 ```
 
+Inspect the registry from the CLI:
+
+```sh
+webmcp-relay registry stats --registry-db ./registry.sqlite
+webmcp-relay registry list --registry-db ./registry.sqlite
+webmcp-relay registry search "filter POST server logs" --registry-db ./registry.sqlite
+webmcp-relay registry show webmcp_2a78e9273019e1f9 --registry-db ./registry.sqlite
+```
+
+All registry inspection commands support `--json`.
+
 ## Telemetry And Evals
 
 `webmcp-relay` can log local telemetry events for discovery, lookup, and
@@ -207,6 +218,12 @@ Run with an explicit registry DB:
 
 ```sh
 npm run relay -- --headless --channel canary --registry-db ./registry.sqlite
+```
+
+Inspect a local registry DB:
+
+```sh
+node ./src/webmcp-relay.js registry search "filter server logs" --registry-db ./registry.sqlite
 ```
 
 Run the bundled eval:

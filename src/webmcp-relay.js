@@ -4,6 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { parseCommonArgs, readValue, splitOption } from "./cli.js";
 import { DevtoolsWebmcpClient } from "./devtools-webmcp-client.js";
 import { runEvalCli } from "./eval-cli.js";
+import { runRegistryCli } from "./registry-cli.js";
 import { TelemetryStore } from "./telemetry-store.js";
 import { ToolRegistry } from "./tool-registry.js";
 import { WebmcpRelay } from "./webmcp-relay-core.js";
@@ -11,6 +12,11 @@ import { WebmcpRelay } from "./webmcp-relay-core.js";
 async function main() {
   if (process.argv[2] === "eval") {
     await runEvalCli(process.argv.slice(3));
+    return;
+  }
+
+  if (process.argv[2] === "registry") {
+    await runRegistryCli(process.argv.slice(3));
     return;
   }
 
@@ -129,6 +135,12 @@ Common options:
 
 Eval:
   webmcp-relay eval run <case.json...> --report ./report.json
+
+Registry:
+  webmcp-relay registry list --registry-db ./registry.sqlite
+  webmcp-relay registry search "filter server logs"
+  webmcp-relay registry show <registry-id>
+  webmcp-relay registry stats
 `;
 }
 

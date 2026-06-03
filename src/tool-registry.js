@@ -146,6 +146,59 @@ export class ToolRegistry {
       }));
   }
 
+  async stats() {
+    await this.load();
+    const totals = this.db
+      .prepare(
+        `SELECT COUNT(*) AS tool_count,
+                COUNT(DISTINCT url) AS url_count,
+                COUNT(DISTINCT origin) AS origin_count,
+                COALESCE(SUM(use_count), 0) AS total_use_count,
+                MAX(last_seen) AS newest_last_seen,
+                MAX(last_used) AS newest_last_used
+         FROM tools`
+      )
+      .get();
+    const topOrigins = this.db
+      .prepare(
+        `SELECT origin, COUNT(*) AS tool_count
+         FROM tools
+         GROUP BY origin
+         ORDER BY tool_count DESC, origin ASC
+         LIMIT 10`
+      )
+      .all();
+    const topTools = this.db
+      .prepare(
+        `SELECT id, tool_name, url, use_count, last_used
+         FROM tools
+         ORDER BY use_count DESC, last_used DESC NULLS LAST, last_seen DESC
+         LIMIT 10`
+      )
+      .all();
+
+    return {
+      path: this.path,
+      toolCount: totals.tool_count,
+      urlCount: totals.url_count,
+      originCount: totals.origin_count,
+      totalUseCount: totals.total_use_count,
+      newestLastSeen: totals.newest_last_seen,
+      newestLastUsed: totals.newest_last_used,
+      topOrigins: topOrigins.map((row) => ({
+        origin: row.origin,
+        toolCount: row.tool_count
+      })),
+      topTools: topTools.map((row) => ({
+        id: row.id,
+        toolName: row.tool_name,
+        url: row.url,
+        useCount: row.use_count,
+        lastUsed: row.last_used
+      }))
+    };
+  }
+
   createSchema() {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS meta (
