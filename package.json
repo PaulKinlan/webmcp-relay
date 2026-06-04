@@ -12,6 +12,7 @@
   "files": [
     "src",
     "evals",
+    "SKILL.md",
     "README.md"
   ],
   "scripts": {

@@ -51,6 +51,11 @@ For local development from this repo:
 Do not use `npm run` in MCP client config because npm can write script banners
 to stdout and break stdio MCP framing.
 
+The npm package also ships `SKILL.md` for agents that can load skills. It tells
+the model to use `open_page` for normal requests to open, visit, browse, go to,
+load, inspect, or navigate to a URL. The user should not need to mention
+WebMCP, MCP, relay, or tools to trigger page navigation through the relay.
+
 ## Modes
 
 By default, `webmcp-relay` runs in dynamic mode.

@@ -50,8 +50,8 @@ export class WebmcpRelay {
         },
         instructions:
           mode === "dynamic"
-            ? "When the user asks to open, visit, go to, load, or navigate to a URL or website, call open_page. This opens Chrome, discovers page WebMCP tools, exposes them directly, and emits tools/list_changed when they change. webmcp_open_site is kept as a compatibility alias. Use webmcp_search_registry to find tools discovered across sites and webmcp_execute_registry_tool to run them."
-            : "When the user asks to open, visit, go to, load, or navigate to a URL or website, call open_page. Inspect tools with webmcp_list_tools, call them with webmcp_call_tool, or use webmcp_search_registry for tools discovered across sites. webmcp_open_site is kept as a compatibility alias."
+            ? "When the user asks to open, visit, browse, go to, load, inspect, or navigate to a URL or website, call open_page. The user does not need to mention WebMCP or tools. This opens Chrome, discovers page WebMCP tools, exposes them directly, and emits tools/list_changed when they change. webmcp_open_site is kept as a compatibility alias. Use webmcp_search_registry to find tools discovered across sites and webmcp_execute_registry_tool to run them."
+            : "When the user asks to open, visit, browse, go to, load, inspect, or navigate to a URL or website, call open_page. The user does not need to mention WebMCP or tools. Inspect tools with webmcp_list_tools, call them with webmcp_call_tool, or use webmcp_search_registry for tools discovered across sites. webmcp_open_site is kept as a compatibility alias."
       }
     );
 
@@ -555,7 +555,7 @@ function openPageTool() {
     name: RELAY_TOOL_NAMES.openPage,
     title: "Open Page",
     description:
-      "Open, visit, browse, go to, load, or navigate Chrome to a URL or website. Use this for ordinary navigation requests; it also discovers any WebMCP tools exposed by the page.",
+      "Open or navigate Chrome to any URL or website. Use this whenever the user asks to open, visit, browse, go to, load, inspect, or navigate to a page, even when they do not mention WebMCP. After navigation, this discovers WebMCP tools exposed by the page and updates the tool list.",
     inputSchema: navigationInputSchema(),
     annotations: {
       readOnlyHint: false,
@@ -572,7 +572,7 @@ function openSiteTool() {
     name: RELAY_TOOL_NAMES.openSite,
     title: "Open WebMCP Site",
     description:
-      "Compatibility alias for open_page. Opens or navigates Chrome to a URL, then discovers WebMCP tools on the page.",
+      "Compatibility alias for open_page. Prefer open_page for ordinary navigation requests. Opens or navigates Chrome to a URL, then discovers WebMCP tools on the page.",
     inputSchema: navigationInputSchema(),
     annotations: {
       readOnlyHint: false,
@@ -590,7 +590,8 @@ function navigationInputSchema() {
     properties: {
       url: {
         type: "string",
-        description: "URL or website to open, visit, go to, load, or navigate to."
+        description:
+          "URL or website to open, visit, browse, go to, load, inspect, or navigate to. Full URLs such as https://example.com are preferred."
       },
       waitForText: {
         type: "string",
@@ -614,7 +615,7 @@ function refreshToolsTool() {
   return {
     name: RELAY_TOOL_NAMES.refreshTools,
     description:
-      "Refresh the WebMCP tool list from the current page. Dynamic mode emits tools/list_changed.",
+      "Refresh or re-discover WebMCP tools from the current page after navigation or page state changes. Dynamic mode emits tools/list_changed.",
     inputSchema: EMPTY_OBJECT_SCHEMA,
     annotations: {
       readOnlyHint: true,
@@ -629,7 +630,8 @@ function refreshToolsTool() {
 function listSiteToolsTool() {
   return {
     name: RELAY_TOOL_NAMES.listTools,
-    description: "List WebMCP tools currently exposed by the page.",
+    description:
+      "List WebMCP tools currently exposed by the open page. Use this after open_page when dynamic webmcp_tool_* tools are not visible to the client.",
     inputSchema: {
       type: "object",
       properties: {
@@ -654,7 +656,7 @@ function callSiteTool() {
   return {
     name: RELAY_TOOL_NAMES.callTool,
     description:
-      "Call a WebMCP page tool by its original name. Use this as the stable fallback when dynamic tools are not refreshed by the client.",
+      "Call a current page WebMCP tool by its original name. Use this as the stable fallback when dynamic webmcp_tool_* tools are not visible or refreshed by the client.",
     inputSchema: {
       type: "object",
       properties: {
@@ -695,7 +697,7 @@ function searchRegistryTool() {
   return {
     name: RELAY_TOOL_NAMES.searchRegistry,
     description:
-      "Search the local WebMCP tool registry for tools that may satisfy a task or intent across previously discovered sites.",
+      "Search the local WebMCP tool registry for tools that may satisfy a user task or intent across previously discovered sites.",
     inputSchema: {
       type: "object",
       properties: {
@@ -728,7 +730,7 @@ function executeRegistryTool() {
   return {
     name: RELAY_TOOL_NAMES.executeRegistryTool,
     description:
-      "Open the site for a tool found in the local registry, refresh its WebMCP tools, and execute the selected tool by registry id.",
+      "Execute a tool found by webmcp_search_registry. Opens the saved site, refreshes its current WebMCP tools, verifies the selected registry id, and calls the matching page tool.",
     inputSchema: {
       type: "object",
       properties: {

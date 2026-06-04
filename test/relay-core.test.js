@@ -34,6 +34,9 @@ test("relay exposes a natural open_page navigation tool before compatibility ali
   assert.match(firstTool.description, /open/i);
   assert.match(firstTool.description, /navigate/i);
   assert.match(firstTool.description, /visit/i);
+  assert.match(firstTool.description, /browse/i);
+  assert.match(firstTool.description, /inspect/i);
+  assert.match(firstTool.description, /do not mention WebMCP/i);
 });
 
 test("open_page dispatches to page navigation and discovery", async () => {
