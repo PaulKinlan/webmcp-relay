@@ -438,7 +438,7 @@ export function scoreAgentTranscript(testCase, transcript) {
   };
 }
 
-async function loadAgentEvalCases(files) {
+export async function loadAgentEvalCases(files) {
   const cases = [];
 
   for (const file of files) {

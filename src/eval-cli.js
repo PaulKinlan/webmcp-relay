@@ -4,6 +4,7 @@ import path from "node:path";
 import { parseCommonArgs, readValue, splitOption } from "./cli.js";
 import { runAgentEval } from "./agent-eval.js";
 import { DevtoolsWebmcpClient } from "./devtools-webmcp-client.js";
+import { prepareHarnessEval, scoreHarnessEval } from "./harness-eval.js";
 import { runSearchEval } from "./search-eval.js";
 import { TelemetryStore } from "./telemetry-store.js";
 import { ToolRegistry } from "./tool-registry.js";
@@ -17,7 +18,7 @@ export async function runEvalCli(args) {
     return;
   }
 
-  if (!["run", "agent", "search"].includes(command)) {
+  if (!["run", "agent", "search", "harness"].includes(command)) {
     throw new Error(`Unsupported eval command: ${command}`);
   }
 
@@ -25,6 +26,8 @@ export async function runEvalCli(args) {
     ? parseEvalAgentArgs(rest)
     : command === "search"
       ? parseEvalSearchArgs(rest)
+      : command === "harness"
+        ? parseEvalHarnessArgs(rest)
       : parseEvalRunArgs(rest);
   if (options.help) {
     process.stdout.write(
@@ -32,6 +35,8 @@ export async function runEvalCli(args) {
         ? agentHelpText()
         : command === "search"
           ? searchHelpText()
+          : command === "harness"
+            ? harnessHelpText()
           : helpText()
     );
     return;
@@ -41,6 +46,10 @@ export async function runEvalCli(args) {
     ? await runAgentEval(options)
     : command === "search"
       ? await runSearchEval(options)
+      : command === "harness"
+        ? options.harnessCommand === "prepare"
+          ? await prepareHarnessEval(options)
+          : await scoreHarnessEval(options)
       : await runEval(options);
   await writeReport(report, options);
 }
@@ -411,6 +420,156 @@ function parseEvalSearchArgs(args) {
   };
 }
 
+function parseEvalHarnessArgs(args) {
+  const [harnessCommand, ...rest] = args;
+
+  if (!harnessCommand || harnessCommand === "--help" || harnessCommand === "-h") {
+    return {
+      harnessCommand: "prepare",
+      help: true
+    };
+  }
+
+  if (harnessCommand === "prepare") {
+    return parseEvalHarnessPrepareArgs(rest);
+  }
+  if (harnessCommand === "score") {
+    return parseEvalHarnessScoreArgs(rest);
+  }
+
+  throw new Error(`Unsupported harness eval command: ${harnessCommand}`);
+}
+
+function parseEvalHarnessPrepareArgs(args) {
+  const commonArgs = [];
+  const caseFiles = [];
+  const extra = {
+    harnessCommand: "prepare",
+    harness: "generic"
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    const { key, inlineValue } = splitOption(arg);
+
+    switch (key) {
+      case "--help":
+      case "-h":
+        extra.help = true;
+        break;
+      case "--out":
+        extra.outDir = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--harness":
+        extra.harness = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--report":
+        extra.report = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--registry-db":
+        extra.registryDb = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--telemetry-db":
+        extra.telemetryDb = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--log-level":
+        extra.logLevel = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--log-file":
+        extra.logFile = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      default:
+        if (COMMON_VALUE_OPTIONS.has(key)) {
+          commonArgs.push(arg);
+          if (inlineValue === undefined) {
+            commonArgs.push(readValue(arg, inlineValue, args, ++index));
+          }
+        } else if (COMMON_BOOLEAN_OPTIONS.has(key)) {
+          commonArgs.push(arg);
+        } else if (arg.startsWith("--")) {
+          throw new Error(`Unknown harness prepare option: ${arg}`);
+        } else {
+          caseFiles.push(arg);
+        }
+        break;
+    }
+  }
+
+  if (!extra.help && caseFiles.length === 0) {
+    throw new Error("eval harness prepare requires at least one agent eval case JSON file.");
+  }
+
+  return {
+    ...parseCommonArgs(commonArgs),
+    ...extra,
+    caseFiles
+  };
+}
+
+function parseEvalHarnessScoreArgs(args) {
+  const extra = {
+    harnessCommand: "score",
+    source: "auto"
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    const { key, inlineValue } = splitOption(arg);
+
+    switch (key) {
+      case "--help":
+      case "-h":
+        extra.help = true;
+        break;
+      case "--report":
+        extra.report = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--transcript-dir":
+        extra.transcriptDir = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--telemetry-db":
+        extra.telemetryDb = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--source":
+        extra.source = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--limit":
+        extra.telemetryLimit = Number(readValue(arg, inlineValue, args, ++index));
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      default:
+        if (arg.startsWith("--")) {
+          throw new Error(`Unknown harness score option: ${arg}`);
+        }
+        extra.runPath = arg;
+        break;
+    }
+  }
+
+  if (!["auto", "transcript", "telemetry"].includes(extra.source)) {
+    throw new Error("--source must be auto, transcript, or telemetry.");
+  }
+  if (!extra.help && !extra.runPath) {
+    throw new Error("eval harness score requires a harness run directory or harness-run.json.");
+  }
+  if (extra.telemetryLimit !== undefined && (!Number.isFinite(extra.telemetryLimit) || extra.telemetryLimit < 1)) {
+    throw new Error("--limit must be a positive number.");
+  }
+
+  return extra;
+}
+
 async function writeReport(report, options) {
   const text = JSON.stringify(report, null, 2);
 
@@ -594,6 +753,8 @@ function helpText() {
   webmcp-relay eval run <case.json...> [options]
   webmcp-relay eval agent <agent-case.json...> [options]
   webmcp-relay eval search <search-case.json...> [options]
+  webmcp-relay eval harness prepare <agent-case.json...> [options]
+  webmcp-relay eval harness score <run-dir|harness-run.json> [options]
 
 Options:
   --report <path>           Write JSON report to a file.
@@ -691,5 +852,37 @@ Case shape:
       }
     ]
   }
+`;
+}
+
+function harnessHelpText() {
+  return `Usage:
+  webmcp-relay eval harness prepare <agent-case.json...> [options]
+  webmcp-relay eval harness score <run-dir|harness-run.json> [options]
+
+This prepares eval cases for an external MCP-capable agent harness such as
+Codex, Claude, or a custom runner. Each case gets an isolated prompt,
+mcp-config.json, registry DB, telemetry DB, log file, and optional transcript
+path.
+
+Prepare options:
+  --out <dir>               Output directory. Default: reports/harness-run.
+  --harness <name>          Label for the target harness, for example codex or claude.
+  --report <path>           Also write the prepare report to a file.
+  --headless                Include --headless in generated relay configs.
+  --channel <name>          Chrome channel for generated relay configs.
+  --browser-url <url>       Connect generated relay configs to an existing browser.
+  --timeout <ms>            Navigation timeout.
+
+Score options:
+  --report <path>           Write JSON score report to a file.
+  --source <mode>           auto, transcript, or telemetry. Default: auto.
+  --transcript-dir <dir>    Directory containing <case-id>.json transcripts.
+  --telemetry-db <path>     Override telemetry DB path for scoring.
+  --limit <number>          Max telemetry events to inspect. Default: 1000.
+
+Examples:
+  webmcp-relay eval harness prepare evals/agent/pizza-maker.json --out ./reports/codex-harness --harness codex --headless --channel canary
+  webmcp-relay eval harness score ./reports/codex-harness --report ./reports/codex-harness-score.json
 `;
 }

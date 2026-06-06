@@ -190,6 +190,9 @@ Common options:
 Eval:
   webmcp-relay eval run <case.json...> --report ./report.json
   webmcp-relay eval agent <agent-case.json...> --model <model> --report ./agent-report.json
+  webmcp-relay eval search <search-case.json...> --report ./search-report.json
+  webmcp-relay eval harness prepare <agent-case.json...> --out ./harness-run
+  webmcp-relay eval harness score ./harness-run --report ./harness-score.json
 
 Registry:
   webmcp-relay registry list --registry-db ./registry.sqlite

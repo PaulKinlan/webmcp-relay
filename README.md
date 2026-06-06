@@ -376,6 +376,59 @@ current MCP tool list, and ask it to return one JSON decision per step:
 `listTools` calls, `callTool` calls, `tools/list_changed` notifications, tool
 arguments, tool output, LLM decisions, and scoring.
 
+## External Agent Harness Evals
+
+There are three practical ways to run agent-level evals:
+
+- Use `eval agent` when you want this repo to own the full agent loop through an
+  OpenAI-compatible chat-completions API.
+- Use `eval harness prepare` when you want an external MCP-capable harness such
+  as Codex, Claude, or a custom runner to be the agent that calls tools.
+- Use `eval harness score` after the external harness run to score the resulting
+  transcript or relay telemetry against the same agent eval success criteria.
+
+Prepare a harness run:
+
+```sh
+npm run eval:harness -- prepare evals/agent/pizza-maker.json \
+  --out ./reports/codex-harness \
+  --harness codex \
+  --headless \
+  --channel canary
+```
+
+This creates one isolated directory per eval case. Each case directory contains:
+
+- `mcp-config.json`: MCP config for the harness
+- `prompt.md`: the task prompt to give the agent
+- `case.json`: the original eval case
+- `registry.sqlite`: per-case local tool registry
+- `telemetry.sqlite`: per-case telemetry DB for tool-call scoring
+- `relay.jsonl`: relay logs
+- `transcript.json`: optional strict-scoring transcript path
+
+Run a case in the external harness by configuring it with that case's
+`mcp-config.json`, starting a fresh session, and pasting the case `prompt.md`.
+The prompt asks the agent to use `webmcp-relay` tools and, when possible, write
+`transcript.json` with tool calls, outputs, and final answer.
+
+Score the harness run:
+
+```sh
+npm run eval:harness -- score ./reports/codex-harness \
+  --report ./reports/codex-harness-score.json
+```
+
+Scoring modes:
+
+- `--source auto` uses `transcript.json` when present, otherwise falls back to
+  telemetry.
+- `--source transcript` requires transcript files and gives strict scoring,
+  including output text and finish state.
+- `--source telemetry` scores tool calls from relay telemetry. This is useful
+  for Claude/Codex-style harnesses that cannot write transcripts, but output
+  criteria and finish state are reported as unscored.
+
 Agent case shape:
 
 ```json
@@ -454,6 +507,18 @@ Run an LLM-in-the-loop agent eval:
 
 ```sh
 npm run eval:agent -- evals/agent/pizza-maker.json --headless --channel canary --model "$WEBMCP_RELAY_AGENT_MODEL"
+```
+
+Prepare an external Codex/Claude-style harness run:
+
+```sh
+npm run eval:harness -- prepare evals/agent/pizza-maker.json --out ./reports/harness-run --harness codex --headless --channel canary
+```
+
+Score an external harness run:
+
+```sh
+npm run eval:harness -- score ./reports/harness-run --report ./reports/harness-score.json
 ```
 
 Run stable mode:
