@@ -145,6 +145,8 @@ test("harness run dry-run prepares codex command and score", async () => {
   assert.equal(report.runs[0].command, "npx");
   assert.equal(report.runs[0].args.includes("@openai/codex@latest"), true);
   assert.equal(report.runs[0].args.includes("exec"), true);
+  assert.equal(report.runs[0].args.includes("--dangerously-bypass-approvals-and-sandbox"), true);
+  assert.equal(report.runs[0].args.includes("--ask-for-approval"), false);
   assert.equal(report.runs[0].commandLine.includes("prompt.md"), true);
   assert.equal(await exists(path.join(outDir, "harness-run.json")), true);
   assert.equal(await exists(path.join(outDir, "agent-pizza-large-bbq", "runner-command.sh")), true);
