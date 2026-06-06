@@ -27,6 +27,7 @@ export function parseCommonArgs(args, defaults = {}) {
         options.waitForText = readValue(arg, inlineValue, args, ++index);
         if (inlineValue !== undefined) index -= 1;
         break;
+      case "--devtools-url":
       case "--browser-url":
         options.browserUrl = readValue(arg, inlineValue, args, ++index);
         if (inlineValue !== undefined) index -= 1;

@@ -516,15 +516,18 @@ function relayArgs(options) {
     options.logFile
   ];
 
-  if (options.headless) args.push("--headless");
-  if (options.browserUrl) args.push("--browser-url", options.browserUrl);
-  if (options.channel) args.push("--channel", options.channel);
+  if (options.browserUrl) {
+    args.push("--devtools-url", options.browserUrl);
+  } else {
+    if (options.headless) args.push("--headless");
+    if (options.channel) args.push("--channel", options.channel);
+    if (options.chromeFeatures) args.push("--chrome-features", options.chromeFeatures);
+    if (options.isolated === false) args.push("--no-isolated");
+  }
   if (options.command) args.push("--command", options.command);
   if (options.mcpPackage) args.push("--mcp-package", options.mcpPackage);
   if (options.navigationTimeout) args.push("--timeout", String(options.navigationTimeout));
   if (options.pageIdx !== undefined) args.push("--page-idx", String(options.pageIdx));
-  if (options.chromeFeatures) args.push("--chrome-features", options.chromeFeatures);
-  if (options.isolated === false) args.push("--no-isolated");
   for (const extraArg of options.extraServerArgs ?? []) {
     args.push("--server-arg", extraArg);
   }

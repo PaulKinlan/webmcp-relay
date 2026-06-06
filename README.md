@@ -111,6 +111,51 @@ the model to use `open_page` for normal requests to open, visit, browse, go to,
 load, inspect, or navigate to a URL. The user should not need to mention
 WebMCP, MCP, relay, or tools to trigger page navigation through the relay.
 
+## Attach To Existing Chrome
+
+By default, `webmcp-relay` asks Chrome DevTools MCP to launch Chrome for you.
+For debugging, you can instead attach to a Chrome instance that you start
+yourself.
+
+`--devtools-url` is the Chrome DevTools endpoint of an already-running Chrome
+process. It is not the website URL to open. The page URL is still passed later
+to the `open_page` MCP tool.
+
+Start Chrome Canary with a DevTools port and the WebMCP feature flags:
+
+```sh
+/Applications/Google\ Chrome\ Canary.app/Contents/MacOS/Google\ Chrome\ Canary \
+  --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/webmcp-chrome \
+  --enable-features=WebMCPTesting,DevToolsWebMCPSupport
+```
+
+Check that the DevTools endpoint is reachable:
+
+```sh
+curl http://127.0.0.1:9222/json/version
+```
+
+Then attach the relay or harness to that Chrome instance:
+
+```sh
+npx -y webmcp-relay --devtools-url http://127.0.0.1:9222
+```
+
+```sh
+npm run eval:harness:codex -- evals/agent/pizza-maker.json \
+  --devtools-url http://127.0.0.1:9222 \
+  --log-level debug
+```
+
+When `--devtools-url` is used, `webmcp-relay` does not launch Chrome, so it
+cannot add `--channel`, `--headless`, or WebMCP feature flags for you. Start the
+Chrome process with the right flags yourself. Use a separate `--user-data-dir`
+so Chrome does not reuse an existing profile and ignore the launch flags.
+
+`--browser-url` is kept as a backwards-compatible alias for `--devtools-url`,
+but `--devtools-url` is clearer and preferred.
+
 ## Modes
 
 By default, `webmcp-relay` runs in dynamic mode.
@@ -436,8 +481,9 @@ always forwards:
 --enable-features=WebMCPTesting,DevToolsWebMCPSupport
 ```
 
-If you pass `--browser-url`, the relay connects to an existing browser instead
-of launching Chrome; start that browser yourself with the same feature flags.
+If you pass `--devtools-url`, the relay connects to the DevTools port of an
+existing Chrome instance instead of launching Chrome; start that browser
+yourself with the same feature flags.
 
 Always put npm's `--` separator before eval case paths and flags. For example,
 use `npm run eval:harness:codex -- --log-level debug`, not

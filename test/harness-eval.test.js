@@ -29,6 +29,27 @@ test("harness prepare writes isolated case prompt and MCP config", async () => {
   assert.equal(await exists(path.join(outDir, "harness-run.json")), true);
 });
 
+test("harness prepare uses devtools-url for existing Chrome attach mode", async () => {
+  const outDir = await tempDir();
+  const report = await prepareHarnessEval({
+    caseFiles: ["evals/agent/pizza-maker.json"],
+    outDir,
+    harness: "codex",
+    browserUrl: "http://127.0.0.1:9222",
+    headless: true,
+    channel: "canary"
+  });
+  const [runCase] = report.cases;
+  const mcpConfig = JSON.parse(await fs.readFile(runCase.mcpConfigFile, "utf8"));
+  const args = mcpConfig.mcpServers["webmcp-relay"].args;
+
+  assert.equal(args.includes("--devtools-url"), true);
+  assert.equal(args.includes("http://127.0.0.1:9222"), true);
+  assert.equal(args.includes("--browser-url"), false);
+  assert.equal(args.includes("--headless"), false);
+  assert.equal(args.includes("--channel"), false);
+});
+
 test("harness score accepts strict transcript output", async () => {
   const outDir = await tempDir();
   const prepare = await prepareHarnessEval({

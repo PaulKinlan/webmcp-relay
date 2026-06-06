@@ -755,6 +755,7 @@ function formatDuration(ms) {
 const COMMON_VALUE_OPTIONS = new Set([
   "--url",
   "--wait-for-text",
+  "--devtools-url",
   "--browser-url",
   "--channel",
   "--command",
@@ -1051,12 +1052,15 @@ Prepare options:
   --report <path>           Also write the prepare report to a file.
   --headless                Include --headless in generated relay configs.
   --channel <name>          Chrome channel for generated relay configs. Default: canary.
-  --browser-url <url>       Connect generated relay configs to an existing browser.
+  --devtools-url <url>      Attach to an existing Chrome DevTools endpoint, for example http://127.0.0.1:9222.
+  --browser-url <url>       Alias for --devtools-url.
   --timeout <ms>            Navigation timeout.
 
 Run options:
   --out <dir>               Output directory. Default: reports/harness-run.
   --report <path>           Write JSON run report to a file.
+  --devtools-url <url>      Attach to an existing Chrome DevTools endpoint, for example http://127.0.0.1:9222.
+  --browser-url <url>       Alias for --devtools-url.
   --dry-run                 Prepare files and print runner commands without invoking the harness.
   --no-score                Do not score after running.
   --score-source <mode>     auto, transcript, or telemetry. Default: auto.

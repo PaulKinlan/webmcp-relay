@@ -172,7 +172,8 @@ Modes:
 
 Common options:
   --url <url>               Optional page to open before the MCP client connects.
-  --browser-url <url>       Connect to an existing Chrome debugging endpoint.
+  --devtools-url <url>      Attach to an existing Chrome DevTools endpoint, for example http://127.0.0.1:9222.
+  --browser-url <url>       Alias for --devtools-url.
   --headless                Launch Chrome headlessly.
   --channel <name>          Chrome channel for chrome-devtools-mcp to launch.
   --timeout <ms>            Navigation timeout.
