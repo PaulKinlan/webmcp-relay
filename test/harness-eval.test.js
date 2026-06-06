@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { prepareHarnessEval, scoreHarnessEval } from "../src/harness-eval.js";
+import { prepareHarnessEval, runHarnessEval, scoreHarnessEval } from "../src/harness-eval.js";
 import { TelemetryStore } from "../src/telemetry-store.js";
 
 test("harness prepare writes isolated case prompt and MCP config", async () => {
@@ -124,6 +124,49 @@ test("harness score can use telemetry for tool-call-only scoring", async () => {
   assert.equal(score.summary.scoredSuccess, 1);
   assert.equal(score.summary.strictSuccess, 0);
   assert.deepEqual(score.results[0].unscoredCriteria, ["mustFinish", "mustIncludeOutputs"]);
+});
+
+test("harness run dry-run prepares codex command and score", async () => {
+  const outDir = await tempDir();
+  const report = await runHarnessEval({
+    caseFiles: ["evals/agent/pizza-maker.json"],
+    harness: "codex",
+    outDir,
+    headless: true,
+    channel: "canary",
+    dryRun: true
+  });
+
+  assert.equal(report.type, "harness-run");
+  assert.equal(report.harness, "codex");
+  assert.equal(report.dryRun, true);
+  assert.equal(report.runs.length, 1);
+  assert.equal(report.runs[0].status, "dry_run");
+  assert.equal(report.runs[0].command, "npx");
+  assert.equal(report.runs[0].args.includes("@openai/codex@latest"), true);
+  assert.equal(report.runs[0].args.includes("exec"), true);
+  assert.equal(report.runs[0].commandLine.includes("prompt.md"), true);
+  assert.equal(await exists(path.join(outDir, "harness-run.json")), true);
+  assert.equal(await exists(path.join(outDir, "agent-pizza-large-bbq", "runner-command.sh")), true);
+  assert.equal(report.score.summary.total, 1);
+});
+
+test("harness run dry-run prepares gemini project settings", async () => {
+  const outDir = await tempDir();
+  const report = await runHarnessEval({
+    caseFiles: ["evals/agent/pizza-maker.json"],
+    harness: "gemini",
+    outDir,
+    dryRun: true,
+    noScore: true
+  });
+  const settings = JSON.parse(
+    await fs.readFile(path.join(outDir, "agent-pizza-large-bbq", ".gemini", "settings.json"), "utf8")
+  );
+
+  assert.equal(report.runs[0].command, "npx");
+  assert.equal(report.runs[0].args.includes("@google/gemini-cli@latest"), true);
+  assert.equal(settings.mcpServers["webmcp-relay"].command, "node");
 });
 
 async function tempDir() {

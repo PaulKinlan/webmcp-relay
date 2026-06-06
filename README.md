@@ -382,22 +382,77 @@ There are three practical ways to run agent-level evals:
 
 - Use `eval agent` when you want this repo to own the full agent loop through an
   OpenAI-compatible chat-completions API.
-- Use `eval harness prepare` when you want an external MCP-capable harness such
-  as Codex, Claude, or a custom runner to be the agent that calls tools.
+- Use `eval harness run` when you want this repo to launch an external
+  MCP-capable harness such as Codex, Claude Code, or Gemini CLI.
+- Use `eval harness prepare` when you want to manually run the external harness
+  yourself with generated prompts and MCP configs.
 - Use `eval harness score` after the external harness run to score the resulting
   transcript or relay telemetry against the same agent eval success criteria.
 
-Prepare a harness run:
+Run with Codex:
 
 ```sh
-npm run eval:harness -- prepare evals/agent/pizza-maker.json \
-  --out ./reports/codex-harness \
-  --harness codex \
-  --headless \
-  --channel canary
+npm run eval:harness run codex
 ```
 
-This creates one isolated directory per eval case. Each case directory contains:
+That runs the default smoke case, `evals/agent/pizza-maker.json`, into
+`./reports/codex-harness-run`.
+
+Pass options with npm's `--` separator:
+
+```sh
+npm run eval:harness -- run codex evals/agent/pizza-maker.json \
+  --out ./reports/codex-harness \
+  --headless \
+  --channel canary \
+  --report ./reports/codex-harness-report.json
+```
+
+Run with Claude Code:
+
+```sh
+npm run eval:harness run claude
+```
+
+With options:
+
+```sh
+npm run eval:harness -- run claude evals/agent/pizza-maker.json \
+  --out ./reports/claude-harness \
+  --headless \
+  --channel canary \
+  --report ./reports/claude-harness-report.json
+```
+
+Run with Gemini CLI:
+
+```sh
+npm run eval:harness run gemini
+```
+
+With options:
+
+```sh
+npm run eval:harness -- run gemini evals/agent/pizza-maker.json \
+  --out ./reports/gemini-harness \
+  --headless \
+  --channel canary \
+  --report ./reports/gemini-harness-report.json
+```
+
+Check the generated command without invoking a model:
+
+```sh
+npm run eval:harness -- run codex evals/agent/pizza-maker.json \
+  --out ./reports/codex-harness \
+  --headless \
+  --channel canary \
+  --dry-run
+```
+
+`eval harness run` prepares the case bundle, invokes the selected harness for
+each case, captures stdout/stderr, and then scores the run. Each case directory
+contains:
 
 - `mcp-config.json`: MCP config for the harness
 - `prompt.md`: the task prompt to give the agent
@@ -407,10 +462,20 @@ This creates one isolated directory per eval case. Each case directory contains:
 - `relay.jsonl`: relay logs
 - `transcript.json`: optional strict-scoring transcript path
 
-Run a case in the external harness by configuring it with that case's
-`mcp-config.json`, starting a fresh session, and pasting the case `prompt.md`.
-The prompt asks the agent to use `webmcp-relay` tools and, when possible, write
-`transcript.json` with tool calls, outputs, and final answer.
+Use the manual prepare path when you want to run the harness yourself:
+
+```sh
+npm run eval:harness -- prepare evals/agent/pizza-maker.json \
+  --out ./reports/manual-harness \
+  --harness codex \
+  --headless \
+  --channel canary
+```
+
+Then configure the harness with the case `mcp-config.json`, start a fresh
+session, and paste the case `prompt.md`. The prompt asks the agent to use
+`webmcp-relay` tools and, when possible, write `transcript.json` with tool calls,
+outputs, and final answer.
 
 Score the harness run:
 
@@ -509,10 +574,10 @@ Run an LLM-in-the-loop agent eval:
 npm run eval:agent -- evals/agent/pizza-maker.json --headless --channel canary --model "$WEBMCP_RELAY_AGENT_MODEL"
 ```
 
-Prepare an external Codex/Claude-style harness run:
+Run an external Codex-style harness eval:
 
 ```sh
-npm run eval:harness -- prepare evals/agent/pizza-maker.json --out ./reports/harness-run --harness codex --headless --channel canary
+npm run eval:harness -- run codex evals/agent/pizza-maker.json --out ./reports/harness-run --headless --channel canary --report ./reports/harness-run-report.json
 ```
 
 Score an external harness run:

@@ -4,7 +4,7 @@ import path from "node:path";
 import { parseCommonArgs, readValue, splitOption } from "./cli.js";
 import { runAgentEval } from "./agent-eval.js";
 import { DevtoolsWebmcpClient } from "./devtools-webmcp-client.js";
-import { prepareHarnessEval, scoreHarnessEval } from "./harness-eval.js";
+import { prepareHarnessEval, runHarnessEval, scoreHarnessEval } from "./harness-eval.js";
 import { runSearchEval } from "./search-eval.js";
 import { TelemetryStore } from "./telemetry-store.js";
 import { ToolRegistry } from "./tool-registry.js";
@@ -49,7 +49,9 @@ export async function runEvalCli(args) {
       : command === "harness"
         ? options.harnessCommand === "prepare"
           ? await prepareHarnessEval(options)
-          : await scoreHarnessEval(options)
+          : options.harnessCommand === "run"
+            ? await runHarnessEval(options)
+            : await scoreHarnessEval(options)
       : await runEval(options);
   await writeReport(report, options);
 }
@@ -433,11 +435,125 @@ function parseEvalHarnessArgs(args) {
   if (harnessCommand === "prepare") {
     return parseEvalHarnessPrepareArgs(rest);
   }
+  if (harnessCommand === "run") {
+    return parseEvalHarnessRunArgs(rest);
+  }
   if (harnessCommand === "score") {
     return parseEvalHarnessScoreArgs(rest);
   }
 
   throw new Error(`Unsupported harness eval command: ${harnessCommand}`);
+}
+
+function parseEvalHarnessRunArgs(args) {
+  const [harness, ...rest] = args;
+  const commonArgs = [];
+  const caseFiles = [];
+  const extra = {
+    harnessCommand: "run",
+    harness,
+    outDir: harness ? `reports/${harness}-harness-run` : undefined,
+    scoreSource: "auto"
+  };
+
+  if (!harness || harness === "--help" || harness === "-h") {
+    return {
+      harnessCommand: "run",
+      help: true
+    };
+  }
+
+  for (let index = 0; index < rest.length; index += 1) {
+    const arg = rest[index];
+    const { key, inlineValue } = splitOption(arg);
+
+    switch (key) {
+      case "--help":
+      case "-h":
+        extra.help = true;
+        break;
+      case "--out":
+        extra.outDir = readValue(arg, inlineValue, rest, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--report":
+        extra.report = readValue(arg, inlineValue, rest, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--registry-db":
+        extra.registryDb = readValue(arg, inlineValue, rest, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--telemetry-db":
+        extra.telemetryDb = readValue(arg, inlineValue, rest, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--log-level":
+        extra.logLevel = readValue(arg, inlineValue, rest, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--log-file":
+        extra.logFile = readValue(arg, inlineValue, rest, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--model":
+        extra.model = readValue(arg, inlineValue, rest, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--runner-command":
+        extra.runnerCommand = readValue(arg, inlineValue, rest, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--runner-package":
+        extra.runnerPackage = readValue(arg, inlineValue, rest, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--timeout-ms":
+        extra.harnessTimeoutMs = Number(readValue(arg, inlineValue, rest, ++index));
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--score-source":
+        extra.scoreSource = readValue(arg, inlineValue, rest, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--dry-run":
+        extra.dryRun = true;
+        break;
+      case "--no-score":
+        extra.noScore = true;
+        break;
+      default:
+        if (COMMON_VALUE_OPTIONS.has(key)) {
+          commonArgs.push(arg);
+          if (inlineValue === undefined) {
+            commonArgs.push(readValue(arg, inlineValue, rest, ++index));
+          }
+        } else if (COMMON_BOOLEAN_OPTIONS.has(key)) {
+          commonArgs.push(arg);
+        } else if (arg.startsWith("--")) {
+          throw new Error(`Unknown harness run option: ${arg}`);
+        } else {
+          caseFiles.push(arg);
+        }
+        break;
+    }
+  }
+
+  if (!extra.help && caseFiles.length === 0) {
+    caseFiles.push("evals/agent/pizza-maker.json");
+  }
+  if (!["auto", "transcript", "telemetry"].includes(extra.scoreSource)) {
+    throw new Error("--score-source must be auto, transcript, or telemetry.");
+  }
+  if (extra.harnessTimeoutMs !== undefined && (!Number.isFinite(extra.harnessTimeoutMs) || extra.harnessTimeoutMs < 1)) {
+    throw new Error("--timeout-ms must be a positive number.");
+  }
+
+  return {
+    ...parseCommonArgs(commonArgs),
+    ...extra,
+    caseFiles
+  };
 }
 
 function parseEvalHarnessPrepareArgs(args) {
@@ -858,6 +974,7 @@ Case shape:
 function harnessHelpText() {
   return `Usage:
   webmcp-relay eval harness prepare <agent-case.json...> [options]
+  webmcp-relay eval harness run <codex|claude|gemini> <agent-case.json...> [options]
   webmcp-relay eval harness score <run-dir|harness-run.json> [options]
 
 This prepares eval cases for an external MCP-capable agent harness such as
@@ -874,6 +991,17 @@ Prepare options:
   --browser-url <url>       Connect generated relay configs to an existing browser.
   --timeout <ms>            Navigation timeout.
 
+Run options:
+  --out <dir>               Output directory. Default: reports/harness-run.
+  --report <path>           Write JSON run report to a file.
+  --dry-run                 Prepare files and print runner commands without invoking the harness.
+  --no-score                Do not score after running.
+  --score-source <mode>     auto, transcript, or telemetry. Default: auto.
+  --runner-command <cmd>    Override runner command, for example codex or npx.
+  --runner-package <pkg>    Override npx package for codex/gemini runners.
+  --model <model>           Forward model to the harness CLI when supported.
+  --timeout-ms <ms>         Max process runtime per case. Default: 600000.
+
 Score options:
   --report <path>           Write JSON score report to a file.
   --source <mode>           auto, transcript, or telemetry. Default: auto.
@@ -882,7 +1010,11 @@ Score options:
   --limit <number>          Max telemetry events to inspect. Default: 1000.
 
 Examples:
+  npm run eval:harness run codex
   webmcp-relay eval harness prepare evals/agent/pizza-maker.json --out ./reports/codex-harness --harness codex --headless --channel canary
+  webmcp-relay eval harness run codex evals/agent/pizza-maker.json --out ./reports/codex-harness --headless --channel canary
+  webmcp-relay eval harness run claude evals/agent/pizza-maker.json --out ./reports/claude-harness --headless --channel canary
+  webmcp-relay eval harness run gemini evals/agent/pizza-maker.json --out ./reports/gemini-harness --headless --channel canary
   webmcp-relay eval harness score ./reports/codex-harness --report ./reports/codex-harness-score.json
 `;
 }

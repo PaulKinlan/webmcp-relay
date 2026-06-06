@@ -1,9 +1,55 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { loadAgentEvalCases, scoreAgentTranscript } from "./agent-eval.js";
 import { TelemetryStore } from "./telemetry-store.js";
 
 const HARNESS_RUN_FILE = "harness-run.json";
+const DEFAULT_HARNESS_TIMEOUT_MS = 10 * 60 * 1000;
+
+export async function runHarnessEval(options = {}) {
+  const harness = normaliseHarnessName(options.harness);
+  const startedAt = new Date().toISOString();
+  const started = performance.now();
+  const prepare = await prepareHarnessEval({
+    ...options,
+    harness
+  });
+  const runs = [];
+
+  for (const runCase of prepare.cases) {
+    runs.push(await runHarnessCase(harness, runCase, options));
+  }
+
+  const score = options.noScore
+    ? undefined
+    : await scoreHarnessEval({
+        runPath: prepare.runFile,
+        source: options.scoreSource ?? "auto",
+        telemetryLimit: options.telemetryLimit
+      });
+
+  return {
+    type: "harness-run",
+    harness,
+    dryRun: options.dryRun === true,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    durationMs: performance.now() - started,
+    runFile: prepare.runFile,
+    outDir: prepare.outDir,
+    caseCount: prepare.caseCount,
+    summary: {
+      total: runs.length,
+      passedProcess: runs.filter((result) => result.exitCode === 0).length,
+      failedProcess: runs.filter((result) => result.exitCode !== 0).length,
+      scoredSuccess: score?.summary?.scoredSuccess,
+      strictSuccess: score?.summary?.strictSuccess
+    },
+    runs,
+    score
+  };
+}
 
 export async function prepareHarnessEval(options = {}) {
   const cases = await loadAgentEvalCases(options.caseFiles ?? []);
@@ -101,6 +147,214 @@ export async function scoreHarnessEval(options = {}) {
     summary: summarizeHarnessResults(results),
     results
   };
+}
+
+async function runHarnessCase(harness, runCase, options) {
+  const invocation = await harnessInvocation(harness, runCase, options);
+  await fs.writeFile(
+    path.join(runCase.caseDir, "runner-command.sh"),
+    `${shellCommand(invocation)}\n`,
+    "utf8"
+  );
+
+  if (options.dryRun) {
+    return {
+      id: runCase.id,
+      status: "dry_run",
+      command: invocation.command,
+      args: invocation.args,
+      cwd: invocation.cwd,
+      commandLine: shellCommand(invocation),
+      stdoutFile: invocation.stdoutFile,
+      stderrFile: invocation.stderrFile,
+      exitCode: 0
+    };
+  }
+
+  return runProcess(invocation, {
+    timeoutMs: options.harnessTimeoutMs ?? DEFAULT_HARNESS_TIMEOUT_MS
+  });
+}
+
+async function harnessInvocation(harness, runCase, options) {
+  const prompt = await fs.readFile(runCase.promptFile, "utf8");
+  const relayConfig = JSON.parse(await fs.readFile(runCase.mcpConfigFile, "utf8"));
+  const stdoutFile = path.join(runCase.caseDir, `${harness}-stdout.txt`);
+  const stderrFile = path.join(runCase.caseDir, `${harness}-stderr.txt`);
+
+  switch (harness) {
+    case "codex":
+      return codexInvocation(runCase, relayConfig, options, prompt, stdoutFile, stderrFile);
+    case "claude":
+      return claudeInvocation(runCase, options, prompt, stdoutFile, stderrFile);
+    case "gemini":
+      await writeGeminiSettings(runCase, relayConfig);
+      return geminiInvocation(runCase, options, prompt, stdoutFile, stderrFile);
+    default:
+      throw new Error(`Unsupported harness runner: ${harness}`);
+  }
+}
+
+function codexInvocation(runCase, relayConfig, options, prompt, stdoutFile, stderrFile) {
+  const server = relayConfig.mcpServers["webmcp-relay"];
+  const command = options.runnerCommand ?? "npx";
+  const args = [
+    ...npxPrefix(command, options.runnerPackage ?? "@openai/codex@latest"),
+    "exec",
+    "-C",
+    process.cwd(),
+    "--sandbox",
+    options.sandbox ?? "danger-full-access",
+    "--ask-for-approval",
+    options.approvalPolicy ?? "never",
+    "-c",
+    `mcp_servers.webmcp-relay.command=${tomlString(server.command)}`,
+    "-c",
+    `mcp_servers.webmcp-relay.args=${tomlStringArray(server.args)}`
+  ];
+
+  if (options.model) args.push("--model", options.model);
+  if (options.codexJson) args.push("--json");
+  args.push("-");
+
+  return {
+    harness: "codex",
+    caseId: runCase.id,
+    command,
+    args,
+    cwd: runCase.caseDir,
+    input: prompt,
+    stdoutFile,
+    stderrFile
+  };
+}
+
+function claudeInvocation(runCase, options, prompt, stdoutFile, stderrFile) {
+  const args = [
+    "--mcp-config",
+    runCase.mcpConfigFile,
+    "--strict-mcp-config",
+    "--permission-mode",
+    options.permissionMode ?? "bypassPermissions",
+    "--output-format",
+    options.outputFormat ?? "json",
+    "--print",
+    prompt
+  ];
+
+  if (options.model) args.unshift("--model", options.model);
+
+  return {
+    harness: "claude",
+    caseId: runCase.id,
+    command: options.runnerCommand ?? "claude",
+    args,
+    cwd: runCase.caseDir,
+    stdoutFile,
+    stderrFile
+  };
+}
+
+function geminiInvocation(runCase, options, prompt, stdoutFile, stderrFile) {
+  const command = options.runnerCommand ?? "npx";
+  const args = [
+    ...npxPrefix(command, options.runnerPackage ?? "@google/gemini-cli@latest"),
+    "--prompt",
+    prompt,
+    "--skip-trust",
+    "--approval-mode",
+    options.approvalMode ?? "yolo",
+    "--allowed-mcp-server-names",
+    "webmcp-relay",
+    "--output-format",
+    options.outputFormat ?? "json"
+  ];
+
+  if (options.model) args.push("--model", options.model);
+
+  return {
+    harness: "gemini",
+    caseId: runCase.id,
+    command,
+    args,
+    cwd: runCase.caseDir,
+    stdoutFile,
+    stderrFile
+  };
+}
+
+function npxPrefix(command, packageName) {
+  return path.basename(command) === "npx" ? ["-y", packageName] : [];
+}
+
+async function writeGeminiSettings(runCase, relayConfig) {
+  const geminiDir = path.join(runCase.caseDir, ".gemini");
+  await fs.mkdir(geminiDir, { recursive: true });
+  await fs.writeFile(
+    path.join(geminiDir, "settings.json"),
+    `${JSON.stringify(relayConfig, null, 2)}\n`,
+    "utf8"
+  );
+}
+
+async function runProcess(invocation, { timeoutMs }) {
+  await fs.writeFile(invocation.stdoutFile, "", "utf8");
+  await fs.writeFile(invocation.stderrFile, "", "utf8");
+
+  return new Promise((resolve) => {
+    const started = performance.now();
+    const child = spawn(invocation.command, invocation.args, {
+      cwd: invocation.cwd,
+      env: {
+        ...process.env,
+        ...(invocation.env ?? {})
+      },
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    let timedOut = false;
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+    }, timeoutMs);
+
+    if (invocation.input) {
+      child.stdin.end(invocation.input);
+    } else {
+      child.stdin.end();
+    }
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", (error) => {
+      stderr += `${error.message}\n`;
+    });
+    child.on("close", async (code, signal) => {
+      clearTimeout(timeout);
+      await fs.writeFile(invocation.stdoutFile, stdout, "utf8");
+      await fs.writeFile(invocation.stderrFile, stderr, "utf8");
+      resolve({
+        id: invocation.caseId,
+        harness: invocation.harness,
+        status: timedOut ? "timeout" : code === 0 ? "passed" : "failed",
+        command: invocation.command,
+        args: invocation.args,
+        cwd: invocation.cwd,
+        commandLine: shellCommand(invocation),
+        stdoutFile: invocation.stdoutFile,
+        stderrFile: invocation.stderrFile,
+        exitCode: code,
+        signal,
+        timedOut,
+        durationMs: performance.now() - started
+      });
+    });
+  });
 }
 
 async function scoreHarnessCase(testCase, runCase, options) {
@@ -538,6 +792,57 @@ function stringifyOutput(value) {
     return undefined;
   }
   return typeof value === "string" ? value : JSON.stringify(value);
+}
+
+function normaliseHarnessName(value) {
+  const name = String(value ?? "").trim().toLowerCase();
+  switch (name) {
+    case "codex":
+    case "openai":
+      return "codex";
+    case "claude":
+    case "claude-code":
+    case "claudecode":
+      return "claude";
+    case "gemini":
+    case "gemini-cli":
+    case "geminicli":
+      return "gemini";
+    default:
+      throw new Error("Harness runner must be codex, claude, or gemini.");
+  }
+}
+
+function shellCommand(invocation) {
+  const env = invocation.env
+    ? Object.entries(invocation.env).map(([key, value]) => `${key}=${shellQuote(value)}`)
+    : [];
+  const command = [
+    ...env,
+    invocation.command,
+    ...invocation.args
+  ].map(shellQuote).join(" ");
+
+  if (invocation.input) {
+    return `${command} < ${shellQuote(path.join(invocation.cwd, "prompt.md"))}`;
+  }
+  return command;
+}
+
+function shellQuote(value) {
+  const text = String(value);
+  if (/^[A-Za-z0-9_./:=@+-]+$/.test(text)) {
+    return text;
+  }
+  return `'${text.replaceAll("'", "'\\''")}'`;
+}
+
+function tomlString(value) {
+  return JSON.stringify(String(value));
+}
+
+function tomlStringArray(values) {
+  return `[${values.map(tomlString).join(", ")}]`;
 }
 
 async function exists(file) {
