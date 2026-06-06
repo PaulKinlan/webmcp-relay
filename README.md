@@ -4,10 +4,62 @@
 agent through Chrome DevTools MCP.
 
 It starts Chrome DevTools MCP with the experimental WebMCP category, navigates
-Chrome on demand, discovers page WebMCP tools, and exposes them to MCP clients.
+Chrome on demand, discovers page WebMCP tools, exposes those tools to MCP
+clients, and records discovered tools in a local registry for later lookup.
 
 Chrome DevTools MCP is spawned as a command. It is not a peer dependency. Use
 `--mcp-package` to pin a package version if needed.
+
+## Capabilities
+
+`webmcp-relay` gives an agent a browser-facing WebMCP layer with these core
+capabilities:
+
+- Navigate Chrome with `open_page` for normal requests to open, visit, browse,
+  go to, load, inspect, or navigate to a page.
+- Discover WebMCP tools exposed by the current page through Chrome DevTools MCP.
+- Expose discovered page tools directly as MCP tools in dynamic mode, for
+  example `webmcp_tool_query`.
+- Provide stable fallback tools for clients that do not refresh dynamic tool
+  lists: `webmcp_list_tools` and `webmcp_call_tool`.
+- Store tools discovered over time in a local SQLite registry.
+- Search that registry by task or intent with `webmcp_search_registry`.
+- Re-open the saved site for a registry match and execute the selected tool with
+  `webmcp_execute_registry_tool`.
+- Log local discovery, lookup, execution, and eval telemetry for later analysis.
+
+The main idea is that an agent should not need the user to say "WebMCP". If the
+user asks to navigate, the agent can call `open_page`; if the user asks for a
+capability seen before, the agent can search the local registry and execute the
+matching tool.
+
+## Discovery Model
+
+Discovery happens at two levels: the active page and the local registry.
+
+Active page discovery:
+
+1. The agent calls `open_page` with a URL.
+2. The relay navigates Chrome through Chrome DevTools MCP.
+3. The relay calls Chrome DevTools MCP `list_webmcp_tools` for the page.
+4. The relay exposes the current page tools to the MCP client.
+5. In dynamic mode, the relay sends `notifications/tools/list_changed` so
+   clients can refresh and see tools such as `webmcp_tool_query`.
+
+Registry discovery:
+
+1. Every discovered page tool is stored locally with its site URL, origin, name,
+   title, description, and input schema.
+2. Re-discovering a page updates existing registry entries, including last seen
+   time and current metadata.
+3. Tool calls update usage fields such as `useCount` and `lastUsed`.
+4. `webmcp_search_registry` searches across all previously discovered tools, not
+   only tools on the active page.
+5. `webmcp_execute_registry_tool` opens the stored site URL, refreshes the live
+   WebMCP tools, verifies the selected tool still exists, and executes it.
+
+This is not a crawler. The registry only contains tools from pages the relay has
+opened, refreshed, or seeded through evals. The registry is local by default.
 
 ## MCP Client Config
 
