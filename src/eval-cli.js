@@ -4,6 +4,7 @@ import path from "node:path";
 import { parseCommonArgs, readValue, splitOption } from "./cli.js";
 import { runAgentEval } from "./agent-eval.js";
 import { DevtoolsWebmcpClient } from "./devtools-webmcp-client.js";
+import { runSearchEval } from "./search-eval.js";
 import { TelemetryStore } from "./telemetry-store.js";
 import { ToolRegistry } from "./tool-registry.js";
 import { WebmcpRelay } from "./webmcp-relay-core.js";
@@ -16,21 +17,31 @@ export async function runEvalCli(args) {
     return;
   }
 
-  if (!["run", "agent"].includes(command)) {
+  if (!["run", "agent", "search"].includes(command)) {
     throw new Error(`Unsupported eval command: ${command}`);
   }
 
   const options = command === "agent"
     ? parseEvalAgentArgs(rest)
-    : parseEvalRunArgs(rest);
+    : command === "search"
+      ? parseEvalSearchArgs(rest)
+      : parseEvalRunArgs(rest);
   if (options.help) {
-    process.stdout.write(command === "agent" ? agentHelpText() : helpText());
+    process.stdout.write(
+      command === "agent"
+        ? agentHelpText()
+        : command === "search"
+          ? searchHelpText()
+          : helpText()
+    );
     return;
   }
 
   const report = command === "agent"
     ? await runAgentEval(options)
-    : await runEval(options);
+    : command === "search"
+      ? await runSearchEval(options)
+      : await runEval(options);
   await writeReport(report, options);
 }
 
@@ -351,6 +362,55 @@ function parseEvalAgentArgs(args) {
   };
 }
 
+function parseEvalSearchArgs(args) {
+  const caseFiles = [];
+  const extra = {
+    limit: 10
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    const { key, inlineValue } = splitOption(arg);
+
+    switch (key) {
+      case "--help":
+      case "-h":
+        extra.help = true;
+        break;
+      case "--report":
+        extra.report = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--registry-db":
+        extra.registryDb = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      case "--limit":
+        extra.limit = Number(readValue(arg, inlineValue, args, ++index));
+        if (inlineValue !== undefined) index -= 1;
+        break;
+      default:
+        if (arg.startsWith("--")) {
+          throw new Error(`Unknown search eval option: ${arg}`);
+        }
+        caseFiles.push(arg);
+        break;
+    }
+  }
+
+  if (!extra.help && caseFiles.length === 0) {
+    throw new Error("eval search requires at least one search eval JSON file.");
+  }
+  if (!Number.isFinite(extra.limit) || extra.limit < 1) {
+    throw new Error("--limit must be a positive number.");
+  }
+
+  return {
+    ...extra,
+    caseFiles
+  };
+}
+
 async function writeReport(report, options) {
   const text = JSON.stringify(report, null, 2);
 
@@ -533,6 +593,7 @@ function helpText() {
   return `Usage:
   webmcp-relay eval run <case.json...> [options]
   webmcp-relay eval agent <agent-case.json...> [options]
+  webmcp-relay eval search <search-case.json...> [options]
 
 Options:
   --report <path>           Write JSON report to a file.
@@ -591,6 +652,44 @@ Case shape:
       "mustCallWebmcpTools": ["set_pizza_size", "set_pizza_style"],
       "mustIncludeOutputs": ["Set pizza size to Large", "Changed pizza style to BBQ"]
     }
+  }
+`;
+}
+
+function searchHelpText() {
+  return `Usage:
+  webmcp-relay eval search <case.json...> [options]
+
+This runs deterministic local registry search-quality evals. It seeds a local
+SQLite registry with fixture tools, runs intent queries, records ranked matches,
+and reports top-1, success rate, mean reciprocal rank, latency, and tag
+breakdowns.
+
+Options:
+  --report <path>           Write JSON report to a file.
+  --registry-db <path>      SQLite registry path for the eval run.
+  --limit <number>          Default result limit for each query. Default: 10.
+
+Case shape:
+  {
+    "id": "registry-search-quality",
+    "tools": [
+      {
+        "id": "analytics-query",
+        "url": "https://...",
+        "name": "query",
+        "description": "Filter server logs by status code"
+      }
+    ],
+    "cases": [
+      {
+        "id": "exact-server-errors",
+        "query": "filter POST status 500 logs",
+        "expectedToolIds": ["analytics-query"],
+        "maxRank": 1,
+        "tags": ["exact"]
+      }
+    ]
   }
 `;
 }

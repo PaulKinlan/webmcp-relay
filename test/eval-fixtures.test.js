@@ -58,3 +58,46 @@ test("bundled eval fixtures are valid and have unique ids", async () => {
 
   assert.equal(caseCount >= 14, true);
 });
+
+test("bundled registry search eval fixtures are valid and have unique ids", async () => {
+  const evalDir = path.resolve("evals", "search");
+  const files = (await fs.readdir(evalDir))
+    .filter((file) => file.endsWith(".json"))
+    .sort();
+  const suiteIds = new Set();
+  const caseIds = new Set();
+
+  assert.equal(files.length >= 1, true);
+
+  for (const file of files) {
+    const fullPath = path.join(evalDir, file);
+    const parsed = JSON.parse(await fs.readFile(fullPath, "utf8"));
+    const suites = Array.isArray(parsed) ? parsed : parsed.suites ?? [parsed];
+
+    for (const suite of suites) {
+      assert.equal(typeof suite.id, "string", `${file} suite is missing id`);
+      assert.equal(suiteIds.has(suite.id), false, `Duplicate search eval suite id ${suite.id}`);
+      suiteIds.add(suite.id);
+      assert.equal(Array.isArray(suite.tools), true, `${suite.id} tools must be an array`);
+      assert.equal(Array.isArray(suite.cases), true, `${suite.id} cases must be an array`);
+
+      const toolIds = new Set(suite.tools.map((tool) => tool.id));
+      assert.equal(toolIds.size, suite.tools.length, `${suite.id} tool ids must be unique`);
+
+      for (const evalCase of suite.cases) {
+        assert.equal(typeof evalCase.id, "string", `${suite.id} case is missing id`);
+        assert.equal(caseIds.has(evalCase.id), false, `Duplicate search eval id ${evalCase.id}`);
+        caseIds.add(evalCase.id);
+        assert.equal(typeof evalCase.query, "string", `${evalCase.id} is missing query`);
+        assert.equal(
+          Array.isArray(evalCase.expectedToolIds),
+          true,
+          `${evalCase.id} expectedToolIds must be an array`
+        );
+        for (const toolId of evalCase.expectedToolIds) {
+          assert.equal(toolIds.has(toolId), true, `${evalCase.id} references ${toolId}`);
+        }
+      }
+    }
+  }
+});

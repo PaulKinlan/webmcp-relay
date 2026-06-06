@@ -22,6 +22,7 @@
     "relay:dynamic": "node ./src/webmcp-relay.js --dynamic",
     "eval": "node ./src/webmcp-relay.js eval run",
     "eval:all": "node ./src/webmcp-relay.js eval run evals/*.json",
+    "eval:search": "node ./src/webmcp-relay.js eval search",
     "eval:agent": "node ./src/webmcp-relay.js eval agent",
     "test": "node --test"
   },

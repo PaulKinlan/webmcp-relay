@@ -293,6 +293,20 @@ These deterministic evals do not use an LLM. They verify browser discovery,
 registry lookup, execution plumbing, latency, Node version, git SHA, registry DB
 path, and telemetry DB path.
 
+Run local registry search-quality evals:
+
+```sh
+npx -y webmcp-relay eval search evals/search/registry-search-quality.json \
+  --report ./reports/search-quality.json
+```
+
+Search-quality evals do not use Chrome or an LLM. They seed a local SQLite
+registry with fixture tools, run intent queries, and score whether the expected
+tool appears within the required rank. Reports include top-1 rate, success rate,
+mean reciprocal rank, average matched rank, average latency, full ranked
+matches, and breakdowns by tags such as `exact`, `fuzzy`, `schema`, and
+`ambiguous`.
+
 Eval case shape:
 
 ```json
@@ -315,6 +329,36 @@ Eval case shape:
 
 `expectedUrlIncludes` is optional but useful when different sites expose tools
 with the same name, for example `search_location`.
+
+Search eval case shape:
+
+```json
+{
+  "id": "registry-search-quality-baseline",
+  "tools": [
+    {
+      "id": "analytics-query",
+      "url": "https://googlechromelabs.github.io/webmcp-tools/demos/analytics-dashboard/",
+      "name": "query",
+      "description": "Filter server logs by HTTP status code"
+    }
+  ],
+  "cases": [
+    {
+      "id": "exact-analytics-post-500",
+      "query": "filter POST server logs with status 500",
+      "expectedToolIds": ["analytics-query"],
+      "maxRank": 1,
+      "tags": ["exact", "analytics"]
+    }
+  ]
+}
+```
+
+This provides a repeatable baseline for improving lookup later. A future vector
+or hybrid search implementation can run the same evals and compare top-1 rate,
+MRR, tag-level failures, and latency against the current SQLite FTS5/BM25
+baseline.
 
 Run LLM-in-the-loop agent evals:
 
@@ -398,6 +442,12 @@ Run the full bundled eval suite:
 
 ```sh
 npm run eval:all -- --headless --channel canary
+```
+
+Run the bundled registry search-quality eval:
+
+```sh
+npm run eval:search -- evals/search/registry-search-quality.json --report ./reports/search-quality.json
 ```
 
 Run an LLM-in-the-loop agent eval:

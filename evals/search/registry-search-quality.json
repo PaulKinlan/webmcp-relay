@@ -1,0 +1,267 @@
+{
+  "id": "registry-search-quality-baseline",
+  "description": "Local registry search baseline with exact, fuzzy, schema, and ambiguous intent queries.",
+  "limit": 8,
+  "tools": [
+    {
+      "id": "analytics-query",
+      "url": "https://googlechromelabs.github.io/webmcp-tools/demos/analytics-dashboard/",
+      "name": "query",
+      "title": "Analytics Log Query",
+      "description": "Filter server logs, web analytics, HTTP requests, POST requests, response status code, 500 errors, failures, endpoint path, time range, group by dimension, and count events.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "description": "HTTP request method such as GET or POST"
+          },
+          "status": {
+            "type": "string",
+            "description": "HTTP response status code such as 200, 404, or 500"
+          },
+          "groupBy": {
+            "type": "string",
+            "description": "Group analytics logs by status, endpoint, method, or path"
+          },
+          "measure": {
+            "type": "string",
+            "description": "Metric to calculate such as count"
+          }
+        }
+      }
+    },
+    {
+      "id": "pizza-customize",
+      "url": "https://googlechromelabs.github.io/webmcp-tools/demos/pizza-maker/",
+      "name": "set_pizza_style",
+      "title": "Pizza Customizer",
+      "description": "Customize pizza order preferences, pizza style, size, crust, sauce, toppings, BBQ, vegetarian, margherita, delivery, and menu choices.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "size": {
+            "type": "string",
+            "description": "Pizza size including small, medium, large"
+          },
+          "style": {
+            "type": "string",
+            "description": "Pizza style such as BBQ, margherita, vegetarian, spicy"
+          },
+          "toppings": {
+            "type": "array",
+            "description": "Pizza toppings and topping choices"
+          }
+        }
+      }
+    },
+    {
+      "id": "flight-search",
+      "url": "https://googlechromelabs.github.io/webmcp-tools/demos/react-flightsearch/",
+      "name": "searchFlights",
+      "title": "Flight Search",
+      "description": "Search and book return flights, round trip travel, departure city, destination city, airport, passengers, cabin, dates, fare, and itinerary.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Departure city or airport"
+          },
+          "to": {
+            "type": "string",
+            "description": "Destination city or airport"
+          },
+          "passengers": {
+            "type": "number",
+            "description": "Number of travellers or passengers"
+          },
+          "tripType": {
+            "type": "string",
+            "description": "One way or return round trip"
+          }
+        }
+      }
+    },
+    {
+      "id": "hotel-location-search",
+      "url": "https://googlechromelabs.github.io/webmcp-tools/demos/hotel-chain/",
+      "name": "search_location",
+      "title": "Hotel Location Search",
+      "description": "Find hotels, accommodation, lodging, rooms, place to stay, spa, pool, amenities, Paris, city destination, check-in, check-out, and guests.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "Hotel city or destination"
+          },
+          "amenities": {
+            "type": "array",
+            "description": "Hotel amenities such as spa, pool, breakfast"
+          },
+          "guests": {
+            "type": "number",
+            "description": "Number of hotel guests"
+          }
+        }
+      }
+    },
+    {
+      "id": "real-estate-location-search",
+      "url": "https://googlechromelabs.github.io/webmcp-tools/demos/real-estate-map/",
+      "name": "search_location",
+      "title": "Real Estate Map Search",
+      "description": "Search property listings, real estate, homes for sale, houses, apartments, Austin neighborhoods, bedrooms, bathrooms, price range, map, and location.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "City, neighborhood, or map area"
+          },
+          "bedrooms": {
+            "type": "number",
+            "description": "Number of bedrooms"
+          },
+          "priceMax": {
+            "type": "number",
+            "description": "Maximum home sale price"
+          }
+        }
+      }
+    },
+    {
+      "id": "leather-return-policy",
+      "url": "https://googlechromelabs.github.io/webmcp-tools/demos/leather-bag/",
+      "name": "get_return_policy",
+      "title": "Leather Bag Return Policy",
+      "description": "Check store return policy, refund rules, exchange terms, 30-day guarantee, warranty, handmade leather bag order, shopping support, and customer service.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "orderType": {
+            "type": "string",
+            "description": "Product or order type such as handmade leather bag"
+          },
+          "policy": {
+            "type": "string",
+            "description": "Return, refund, guarantee, warranty, or exchange policy"
+          }
+        }
+      }
+    },
+    {
+      "id": "leather-store-search",
+      "url": "https://googlechromelabs.github.io/webmcp-tools/demos/leather-bag/",
+      "name": "search_store",
+      "title": "Leather Store Search",
+      "description": "Search the store catalog for handmade leather bags, satchel, tote, accessories, products, price, color, inventory, shopping, and browse results.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Store search query for leather products"
+          },
+          "color": {
+            "type": "string",
+            "description": "Product color filter"
+          }
+        }
+      }
+    },
+    {
+      "id": "coffee-menu-search",
+      "url": "https://googlechromelabs.github.io/webmcp-tools/demos/coffee-shop/",
+      "name": "search_menu",
+      "title": "Coffee Menu Search",
+      "description": "Find coffee shop menu drinks, espresso, latte, cappuccino, tea, pastry, pickup, cafe item, size, milk, and availability.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Drink, pastry, or cafe menu item"
+          },
+          "pickup": {
+            "type": "boolean",
+            "description": "Whether the order is for pickup"
+          }
+        }
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "exact-analytics-post-500",
+      "query": "filter POST server logs with status 500",
+      "expectedToolIds": ["analytics-query"],
+      "maxRank": 1,
+      "tags": ["exact", "analytics"]
+    },
+    {
+      "id": "fuzzy-analytics-http-failures",
+      "query": "find http failures for post requests",
+      "expectedToolIds": ["analytics-query"],
+      "maxRank": 1,
+      "tags": ["fuzzy", "analytics"]
+    },
+    {
+      "id": "schema-analytics-group-response-code",
+      "query": "group errors by response code",
+      "expectedToolIds": ["analytics-query"],
+      "maxRank": 1,
+      "tags": ["schema", "analytics"]
+    },
+    {
+      "id": "fuzzy-pizza-typo-adjacent",
+      "query": "change piza topping and crust choices",
+      "expectedToolIds": ["pizza-customize"],
+      "maxRank": 1,
+      "tags": ["fuzzy", "pizza"]
+    },
+    {
+      "id": "exact-flight-return-trip",
+      "query": "search return flights from London to New York for two passengers",
+      "expectedToolIds": ["flight-search"],
+      "maxRank": 1,
+      "tags": ["exact", "travel"]
+    },
+    {
+      "id": "ambiguous-location-hotel-spa",
+      "query": "find a paris place to stay with spa amenities",
+      "expectedToolIds": ["hotel-location-search"],
+      "maxRank": 1,
+      "tags": ["ambiguous", "travel"]
+    },
+    {
+      "id": "ambiguous-location-real-estate",
+      "query": "homes for sale in Austin with bedrooms on a map",
+      "expectedToolIds": ["real-estate-location-search"],
+      "maxRank": 1,
+      "tags": ["ambiguous", "real-estate"]
+    },
+    {
+      "id": "fuzzy-return-policy",
+      "query": "check refund guarantee for a handmade leather bag order",
+      "expectedToolIds": ["leather-return-policy"],
+      "maxRank": 1,
+      "tags": ["fuzzy", "commerce"]
+    },
+    {
+      "id": "exact-store-search",
+      "query": "search the leather store catalog for a brown tote",
+      "expectedToolIds": ["leather-store-search"],
+      "maxRank": 1,
+      "tags": ["exact", "commerce"]
+    },
+    {
+      "id": "fuzzy-coffee-pickup",
+      "query": "find espresso drink pickup from the cafe menu",
+      "expectedToolIds": ["coffee-menu-search"],
+      "maxRank": 1,
+      "tags": ["fuzzy", "coffee"]
+    }
+  ]
+}
