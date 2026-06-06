@@ -23,6 +23,10 @@ available.
   WebMCP name.
 - Call `webmcp_refresh_tools` after page state changes when the available page
   tools may have changed.
+- Use `chrome_*` tools for browser and page interactions outside WebMCP, such as
+  closing tabs, selecting pages, clicking, typing, waiting, screenshots, or page
+  inspection. These are proxied from Chrome DevTools MCP after the relay has
+  connected to Chrome.
 
 ## Registry Tools
 

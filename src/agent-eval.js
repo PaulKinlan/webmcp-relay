@@ -340,6 +340,7 @@ function agentSystemPrompt() {
     "You can list MCP tools, call one available MCP tool, or finish.",
     "If a siteUrl is supplied, normally call open_page first to navigate and discover page WebMCP tools.",
     "After opening a WebMCP page, dynamic tools may appear. Prefer direct dynamic tools such as webmcp_tool_set_pizza_size when they are available.",
+    "After Chrome DevTools MCP connects, browser/page interaction tools may appear with a chrome_ prefix. Use them for page management or browser interaction that WebMCP tools do not cover, such as closing tabs, selecting pages, clicking, typing, waiting, screenshots, or inspection.",
     "Use webmcp_search_registry and webmcp_execute_registry_tool when the task refers to tools discovered over time or pre-seeded registry tools.",
     "Use schemas exactly, including enum values and required fields.",
     "JSON shape: {\"action\":\"list_tools\"} or {\"action\":\"call_tool\",\"toolName\":\"...\",\"arguments\":{},\"reason\":\"...\"} or {\"action\":\"finish\",\"answer\":\"...\"}."

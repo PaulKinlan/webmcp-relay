@@ -24,6 +24,7 @@ export class DevtoolsWebmcpClient {
     this.client = null;
     this.transport = null;
     this.chromeToolNames = [];
+    this.chromeTools = [];
     this.stderrChunks = [];
     this.logger = this.options.logger ?? noopLogger;
   }
@@ -96,13 +97,19 @@ export class DevtoolsWebmcpClient {
   async refreshChromeTools() {
     await this.ensureConnected();
     const result = await this.client.listTools();
-    this.chromeToolNames = (result.tools ?? []).map((tool) => tool.name);
+    this.chromeTools = result.tools ?? [];
+    this.chromeToolNames = this.chromeTools.map((tool) => tool.name);
     assertRequiredChromeTools(this.chromeToolNames);
     this.logger.debug("chrome_tools.refreshed", {
       count: this.chromeToolNames.length,
       toolNames: this.chromeToolNames
     });
-    return this.chromeToolNames;
+    return this.chromeTools;
+  }
+
+  async listChromeTools() {
+    await this.ensureConnected();
+    return this.chromeTools;
   }
 
   async navigate(url, options = {}) {
@@ -194,6 +201,34 @@ export class DevtoolsWebmcpClient {
       return result;
     } catch (error) {
       this.logger.error("webmcp_tool.execute.error", {
+        toolName: name,
+        latencyMs: performance.now() - startedAt,
+        error
+      });
+      throw error;
+    }
+  }
+
+  async executeChromeTool(name, args = {}) {
+    const startedAt = performance.now();
+    this.logger.info("chrome_tool.execute.start", {
+      toolName: name,
+      args: Object.keys(args ?? {})
+    });
+    await this.ensureConnected();
+    try {
+      const result = await this.client.callTool({
+        name,
+        arguments: args
+      });
+      this.logger.info("chrome_tool.execute.done", {
+        toolName: name,
+        isError: result.isError === true,
+        latencyMs: performance.now() - startedAt
+      });
+      return result;
+    } catch (error) {
+      this.logger.error("chrome_tool.execute.error", {
         toolName: name,
         latencyMs: performance.now() - startedAt,
         error

@@ -489,6 +489,7 @@ function harnessPrompt({ testCase, harness, transcriptFile }) {
     "- Use `open_page` for ordinary navigation.",
     "- After opening a page, use discovered dynamic tools such as `webmcp_tool_*` when available.",
     "- If dynamic tools are not visible, use `webmcp_list_tools` and `webmcp_call_tool`.",
+    "- Use `chrome_*` tools for browser/page interactions outside WebMCP, such as closing tabs, selecting pages, clicking, typing, waiting, screenshots, or inspection.",
     "- For tasks that refer to previously discovered tools, use `webmcp_search_registry` and `webmcp_execute_registry_tool`.",
     "",
     "## Optional Transcript",
@@ -696,6 +697,15 @@ function telemetryEventToTranscriptEntry(event) {
         name: event.metadata?.dynamicName ?? dynamicNameForOriginal(event.toolName),
         arguments: {},
         originalToolName: event.toolName,
+        isError: event.isError,
+        resultText: event.errorText
+      };
+    case "call_chrome_tool":
+      return {
+        type: "call_tool",
+        name: event.toolName,
+        arguments: {},
+        originalToolName: event.metadata?.originalToolName,
         isError: event.isError,
         resultText: event.errorText
       };

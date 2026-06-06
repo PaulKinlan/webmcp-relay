@@ -20,6 +20,9 @@ capabilities:
 - Discover WebMCP tools exposed by the current page through Chrome DevTools MCP.
 - Expose discovered page tools directly as MCP tools in dynamic mode, for
   example `webmcp_tool_query`.
+- Expose Chrome DevTools MCP browser/page tools with a `chrome_` prefix after
+  the relay connects, for example `chrome_close_page`, `chrome_list_pages`, or
+  interaction tools made available by the installed Chrome DevTools MCP server.
 - Provide stable fallback tools for clients that do not refresh dynamic tool
   lists: `webmcp_list_tools` and `webmcp_call_tool`.
 - Store tools discovered over time in a local SQLite registry.
@@ -125,6 +128,13 @@ Dynamic mode exposes wrapper tools first:
 After `open_page`, it calls Chrome DevTools MCP `list_webmcp_tools`,
 rebuilds its MCP tool list, and sends `notifications/tools/list_changed`.
 Clients that refresh tools will then see page tools such as `webmcp_tool_query`.
+Dynamic mode also re-exposes non-WebMCP Chrome DevTools MCP tools with a
+`chrome_` prefix after Chrome DevTools MCP has connected. This lets the agent
+use browser/page controls such as listing or closing pages, selecting tabs,
+waiting, screenshots, clicking, typing, or other interaction tools supported by
+the installed Chrome DevTools MCP server. The raw `list_webmcp_tools` and
+`execute_webmcp_tool` tools are hidden because the relay already provides
+WebMCP-specific wrappers.
 `webmcp_open_site` remains available as a compatibility alias.
 
 Stable mode is available for clients that do not support dynamic tool-list
@@ -207,6 +217,7 @@ Logged event types include:
 - `search_registry`
 - `call_site_tool`
 - `call_dynamic_tool`
+- `call_chrome_tool`
 - `execute_registry_tool`
 - `eval_case`
 
@@ -271,6 +282,7 @@ Useful relay events include:
 - `search_registry.start` / `search_registry.done`
 - `execute_registry_tool.start` / `execute_registry_tool.done`
 - `call_dynamic_tool.start` / `call_dynamic_tool.done`
+- `call_chrome_tool.start` / `call_chrome_tool.done`
 - `devtools` component events such as `connect.start`, `navigate.done`, and
   `webmcp_tool.execute.done`
 

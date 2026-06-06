@@ -4,7 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { ToolRegistry } from "../src/tool-registry.js";
-import { dynamicMcpToolName, RELAY_TOOL_NAMES, WebmcpRelay } from "../src/webmcp-relay-core.js";
+import {
+  chromeDevtoolsMcpToolName,
+  dynamicMcpToolName,
+  RELAY_TOOL_NAMES,
+  WebmcpRelay
+} from "../src/webmcp-relay-core.js";
 
 test("stable relay exposes only wrapper tools", () => {
   const relay = new WebmcpRelay({
@@ -69,6 +74,80 @@ test("dynamic relay exposes discovered page tools as MCP tools", async () => {
   assert.equal(relay.dynamicToolMap.get("webmcp_tool_query"), "query");
 });
 
+test("dynamic relay exposes Chrome DevTools tools with chrome prefix", () => {
+  const bridge = new FakeBridge();
+  bridge.chromeTools = [
+    {
+      name: "close_page",
+      description: "Close a page by index",
+      inputSchema: {
+        type: "object",
+        properties: {
+          pageIdx: {
+            type: "number"
+          }
+        }
+      }
+    },
+    {
+      name: "list_webmcp_tools",
+      description: "Internal WebMCP listing"
+    },
+    {
+      name: "execute_webmcp_tool",
+      description: "Internal WebMCP executor"
+    }
+  ];
+  const relay = new WebmcpRelay({
+    bridge,
+    mode: "dynamic"
+  });
+
+  const tools = relay.listMcpTools();
+  const toolNames = tools.map((tool) => tool.name);
+  const closeTool = tools.find((tool) => tool.name === "chrome_close_page");
+
+  assert.equal(toolNames.includes("chrome_close_page"), true);
+  assert.equal(toolNames.includes("chrome_list_webmcp_tools"), false);
+  assert.equal(toolNames.includes("chrome_execute_webmcp_tool"), false);
+  assert.match(closeTool.description, /Chrome DevTools/i);
+  assert.equal(closeTool._meta["webmcp/chromeDevtoolsToolName"], "close_page");
+});
+
+test("chrome-prefixed tools dispatch to Chrome DevTools MCP", async () => {
+  const bridge = new FakeBridge();
+  bridge.chromeTools = [
+    {
+      name: "close_page",
+      inputSchema: {
+        type: "object",
+        properties: {
+          pageIdx: {
+            type: "number"
+          }
+        }
+      }
+    }
+  ];
+  const relay = new WebmcpRelay({
+    bridge,
+    mode: "dynamic"
+  });
+
+  await relay.callMcpTool("chrome_close_page", {
+    pageIdx: 2
+  });
+
+  assert.deepEqual(bridge.chromeExecuted, [
+    {
+      name: "close_page",
+      args: {
+        pageIdx: 2
+      }
+    }
+  ]);
+});
+
 test("dynamic tool calls dispatch to the original WebMCP tool name", async () => {
   const bridge = new FakeBridge();
   const relay = new WebmcpRelay({
@@ -124,6 +203,13 @@ test("dynamicMcpToolName sanitizes and avoids collisions", () => {
 
   assert.equal(dynamicMcpToolName("read logs", used), "webmcp_tool_read_logs_2");
   assert.equal(dynamicMcpToolName("query", used), "webmcp_tool_query");
+});
+
+test("chromeDevtoolsMcpToolName sanitizes and avoids collisions", () => {
+  const used = new Set(["chrome_close_page"]);
+
+  assert.equal(chromeDevtoolsMcpToolName("close page", used), "chrome_close_page_2");
+  assert.equal(chromeDevtoolsMcpToolName("list_pages", used), "chrome_list_pages");
 });
 
 test("registry tools are exposed when a registry is configured", () => {
@@ -250,6 +336,8 @@ test("relay logs tool operation lifecycle events", async () => {
 class FakeBridge {
   constructor() {
     this.executed = [];
+    this.chromeExecuted = [];
+    this.chromeTools = [];
   }
 
   async navigate(url) {
@@ -285,6 +373,22 @@ class FakeBridge {
         }
       ]
     };
+  }
+
+  async executeChromeTool(name, args) {
+    this.chromeExecuted.push({ name, args });
+    return {
+      content: [
+        {
+          type: "text",
+          text: "chrome ok"
+        }
+      ]
+    };
+  }
+
+  async refreshChromeTools() {
+    return this.chromeTools;
   }
 
   async close() {}

@@ -5,6 +5,7 @@ import {
   ListToolsRequestSchema,
   McpError
 } from "@modelcontextprotocol/sdk/types.js";
+import { CHROME_TOOL_NAMES } from "./discovery.js";
 import { describeArgs, noopLogger } from "./logger.js";
 
 export const RELAY_TOOL_NAMES = {
@@ -22,6 +23,11 @@ const EMPTY_OBJECT_SCHEMA = {
   properties: {},
   additionalProperties: true
 };
+
+const HIDDEN_CHROME_TOOL_NAMES = new Set([
+  CHROME_TOOL_NAMES.listWebmcpTools,
+  CHROME_TOOL_NAMES.executeWebmcpTool
+]);
 
 export class WebmcpRelay {
   constructor({ bridge, mode = "stable", registry, telemetry, logger }) {
@@ -123,6 +129,7 @@ export class WebmcpRelay {
     }
 
     if (this.mode === "dynamic") {
+      tools.push(...this.chromeDevtoolsMcpTools());
       tools.push(...this.siteTools.map((tool) => this.toDynamicMcpTool(tool)));
     }
 
@@ -150,6 +157,9 @@ export class WebmcpRelay {
       case RELAY_TOOL_NAMES.executeRegistryTool:
         return this.executeRegistryTool(args);
       default:
+        if (this.isChromeDevtoolsTool(name)) {
+          return this.callChromeDevtoolsTool(name, args);
+        }
         return this.callDynamicTool(name, args);
     }
   }
@@ -276,6 +286,34 @@ export class WebmcpRelay {
     );
   }
 
+  async callChromeDevtoolsTool(name, args = {}) {
+    return this.withTelemetry(
+      "call_chrome_tool",
+      {
+        toolName: name
+      },
+      async () => {
+        let originalName = this.chromeDevtoolsOriginalToolName(name);
+
+        if (!originalName) {
+          await this.bridge.refreshChromeTools?.();
+          originalName = this.chromeDevtoolsOriginalToolName(name);
+        }
+
+        if (!originalName) {
+          throw new McpError(ErrorCode.MethodNotFound, `Unknown Chrome DevTools tool: ${name}`);
+        }
+
+        const result = await this.bridge.executeChromeTool(originalName, args);
+        await this.maybeRefreshAfterChromeTool(originalName, args);
+        return result;
+      },
+      () => ({
+        originalToolName: this.chromeDevtoolsOriginalToolName(name)
+      })
+    );
+  }
+
   async searchRegistry(args = {}) {
     return this.withTelemetry(
       "search_registry",
@@ -370,6 +408,80 @@ export class WebmcpRelay {
         taskSupport: "forbidden"
       }
     };
+  }
+
+  chromeDevtoolsMcpTools() {
+    const usedNames = new Set(Object.values(RELAY_TOOL_NAMES));
+    for (const tool of this.siteTools) {
+      usedNames.add(dynamicMcpToolName(tool.name, usedNames));
+    }
+
+    return this.publicChromeTools().map((tool) => {
+      const name = chromeDevtoolsMcpToolName(tool.name, usedNames);
+      usedNames.add(name);
+      return {
+        name,
+        title: tool.title,
+        description: tool.description
+          ? `Chrome DevTools browser/page tool "${tool.name}": ${tool.description}`
+          : `Chrome DevTools browser/page tool "${tool.name}". Use this for browser interaction such as tab/page management, clicking, typing, waiting, screenshots, or inspecting the page when a matching Chrome DevTools MCP capability is available.`,
+        inputSchema: normaliseInputSchema(tool.inputSchema),
+        outputSchema: tool.outputSchema,
+        annotations: tool.annotations,
+        _meta: {
+          "webmcp/chromeDevtoolsToolName": tool.name
+        },
+        execution: {
+          taskSupport: "forbidden"
+        }
+      };
+    });
+  }
+
+  publicChromeTools() {
+    return (this.bridge.chromeTools ?? [])
+      .filter((tool) => tool?.name && !HIDDEN_CHROME_TOOL_NAMES.has(tool.name));
+  }
+
+  chromeDevtoolsToolMap() {
+    const usedNames = new Set(Object.values(RELAY_TOOL_NAMES));
+    for (const tool of this.siteTools) {
+      usedNames.add(dynamicMcpToolName(tool.name, usedNames));
+    }
+
+    const map = new Map();
+    for (const tool of this.publicChromeTools()) {
+      const name = chromeDevtoolsMcpToolName(tool.name, usedNames);
+      usedNames.add(name);
+      map.set(name, tool.name);
+    }
+    return map;
+  }
+
+  chromeDevtoolsOriginalToolName(name) {
+    return this.chromeDevtoolsToolMap().get(name);
+  }
+
+  isChromeDevtoolsTool(name) {
+    return String(name).startsWith("chrome_");
+  }
+
+  async maybeRefreshAfterChromeTool(originalName, args) {
+    if (!["new_page", "navigate_page", "select_page"].includes(originalName)) {
+      return;
+    }
+
+    if (typeof args?.url === "string") {
+      this.currentUrl = args.url;
+    }
+
+    await this.refreshTools({ notify: false }).catch((error) => {
+      this.logger.warn("chrome_tool.refresh_after_call.error", {
+        toolName: originalName,
+        error
+      });
+    });
+    this.notifyToolsChanged();
   }
 
   publicSiteTools() {
@@ -538,6 +650,25 @@ export function dynamicMcpToolName(siteToolName, usedNames = new Set()) {
       .replace(/[^A-Za-z0-9_-]+/g, "_")
       .replace(/^_+|_+$/g, "") || "tool";
   const base = `webmcp_tool_${sanitized}`;
+
+  if (!usedNames.has(base)) {
+    return base;
+  }
+
+  let counter = 2;
+  while (usedNames.has(`${base}_${counter}`)) {
+    counter += 1;
+  }
+  return `${base}_${counter}`;
+}
+
+export function chromeDevtoolsMcpToolName(chromeToolName, usedNames = new Set()) {
+  const sanitized =
+    String(chromeToolName)
+      .trim()
+      .replace(/[^A-Za-z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "tool";
+  const base = `chrome_${sanitized}`;
 
   if (!usedNames.has(base)) {
     return base;

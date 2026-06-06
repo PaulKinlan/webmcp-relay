@@ -126,6 +126,46 @@ test("harness score can use telemetry for tool-call-only scoring", async () => {
   assert.deepEqual(score.results[0].unscoredCriteria, ["mustFinish", "mustIncludeOutputs"]);
 });
 
+test("harness telemetry scoring includes Chrome DevTools tool calls", async () => {
+  const outDir = await tempDir();
+  const caseFile = path.join(outDir, "chrome-close-page.json");
+  await fs.writeFile(caseFile, `${JSON.stringify({
+    id: "agent-chrome-close-page",
+    goal: "Close an extra browser page.",
+    successCriteria: {
+      mustCallMcpTools: ["chrome_close_page"],
+      mustFinish: false
+    }
+  }, null, 2)}\n`, "utf8");
+  const prepare = await prepareHarnessEval({
+    caseFiles: [caseFile],
+    outDir,
+    harness: "codex"
+  });
+  const [runCase] = prepare.cases;
+  const telemetry = new TelemetryStore({
+    path: runCase.telemetryDb
+  });
+
+  await telemetry.log({
+    eventType: "call_chrome_tool",
+    toolName: "chrome_close_page",
+    isError: false,
+    metadata: {
+      originalToolName: "close_page"
+    }
+  });
+  telemetry.close();
+
+  const score = await scoreHarnessEval({
+    runPath: outDir,
+    source: "telemetry"
+  });
+
+  assert.equal(score.summary.scoredSuccess, 1);
+  assert.deepEqual(score.results[0].score.calledMcpToolNames, ["chrome_close_page"]);
+});
+
 test("harness run dry-run prepares codex command and score", async () => {
   const outDir = await tempDir();
   const report = await runHarnessEval({
