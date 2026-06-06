@@ -1,11 +1,15 @@
 import fs from "node:fs/promises";
+import { createWriteStream } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { loadAgentEvalCases, scoreAgentTranscript } from "./agent-eval.js";
 import { TelemetryStore } from "./telemetry-store.js";
 
 const HARNESS_RUN_FILE = "harness-run.json";
+const HARNESS_LATEST_FILE = "harness-latest.json";
 const DEFAULT_HARNESS_TIMEOUT_MS = 10 * 60 * 1000;
+const DEFAULT_REPORTS_DIR = "reports";
 
 export async function runHarnessEval(options = {}) {
   const harness = normaliseHarnessName(options.harness);
@@ -15,12 +19,28 @@ export async function runHarnessEval(options = {}) {
     ...options,
     harness
   });
+  emitProgress(options, {
+    type: "harness.run.start",
+    harness,
+    outDir: prepare.outDir,
+    runFile: prepare.runFile,
+    caseCount: prepare.caseCount
+  });
   const runs = [];
 
-  for (const runCase of prepare.cases) {
-    runs.push(await runHarnessCase(harness, runCase, options));
+  for (const [index, runCase] of prepare.cases.entries()) {
+    runs.push(await runHarnessCase(harness, runCase, options, {
+      index: index + 1,
+      total: prepare.cases.length
+    }));
   }
 
+  emitProgress(options, {
+    type: "harness.score.start",
+    skipped: options.noScore === true,
+    runFile: prepare.runFile,
+    source: options.scoreSource ?? "auto"
+  });
   const score = options.noScore
     ? undefined
     : await scoreHarnessEval({
@@ -28,8 +48,13 @@ export async function runHarnessEval(options = {}) {
         source: options.scoreSource ?? "auto",
         telemetryLimit: options.telemetryLimit
       });
+  emitProgress(options, {
+    type: "harness.score.done",
+    skipped: options.noScore === true,
+    summary: score?.summary
+  });
 
-  return {
+  const report = {
     type: "harness-run",
     harness,
     dryRun: options.dryRun === true,
@@ -49,6 +74,10 @@ export async function runHarnessEval(options = {}) {
     runs,
     score
   };
+  if (options.dryRun !== true || options.latestDir) {
+    await writeLatestHarnessRun(report, options);
+  }
+  return report;
 }
 
 export async function prepareHarnessEval(options = {}) {
@@ -126,7 +155,8 @@ export async function prepareHarnessEval(options = {}) {
 }
 
 export async function scoreHarnessEval(options = {}) {
-  const run = await loadHarnessRun(options.runPath);
+  const resolvedRunPath = await resolveHarnessRunPath(options);
+  const run = await loadHarnessRun(resolvedRunPath);
   const startedAt = new Date().toISOString();
   const started = performance.now();
   const results = [];
@@ -142,23 +172,38 @@ export async function scoreHarnessEval(options = {}) {
     finishedAt: new Date().toISOString(),
     durationMs: performance.now() - started,
     harness: run.harness,
-    runFile: run.runFile ?? resolveRunFile(options.runPath),
+    runFile: run.runFile ?? resolveRunFile(resolvedRunPath),
+    resolvedRunPath,
     caseCount: results.length,
     summary: summarizeHarnessResults(results),
     results
   };
 }
 
-async function runHarnessCase(harness, runCase, options) {
+async function runHarnessCase(harness, runCase, options, position) {
   const invocation = await harnessInvocation(harness, runCase, options);
+  const runnerCommandFile = path.join(runCase.caseDir, "runner-command.sh");
   await fs.writeFile(
-    path.join(runCase.caseDir, "runner-command.sh"),
+    runnerCommandFile,
     `${shellCommand(invocation)}\n`,
     "utf8"
   );
 
+  emitProgress(options, {
+    type: "harness.case.start",
+    id: runCase.id,
+    harness,
+    index: position.index,
+    total: position.total,
+    caseDir: runCase.caseDir,
+    logFile: runCase.logFile,
+    stdoutFile: invocation.stdoutFile,
+    stderrFile: invocation.stderrFile,
+    runnerCommandFile
+  });
+
   if (options.dryRun) {
-    return {
+    const result = {
       id: runCase.id,
       status: "dry_run",
       command: invocation.command,
@@ -169,11 +214,34 @@ async function runHarnessCase(harness, runCase, options) {
       stderrFile: invocation.stderrFile,
       exitCode: 0
     };
+    emitProgress(options, {
+      type: "harness.case.done",
+      id: runCase.id,
+      status: result.status,
+      exitCode: result.exitCode,
+      stdoutFile: result.stdoutFile,
+      stderrFile: result.stderrFile,
+      logFile: runCase.logFile
+    });
+    return result;
   }
 
-  return runProcess(invocation, {
+  const result = await runProcess(invocation, {
     timeoutMs: options.harnessTimeoutMs ?? DEFAULT_HARNESS_TIMEOUT_MS
   });
+  emitProgress(options, {
+    type: "harness.case.done",
+    id: runCase.id,
+    status: result.status,
+    exitCode: result.exitCode,
+    signal: result.signal,
+    timedOut: result.timedOut,
+    durationMs: result.durationMs,
+    stdoutFile: result.stdoutFile,
+    stderrFile: result.stderrFile,
+    logFile: runCase.logFile
+  });
+  return result;
 }
 
 async function harnessInvocation(harness, runCase, options) {
@@ -297,6 +365,8 @@ async function writeGeminiSettings(runCase, relayConfig) {
 async function runProcess(invocation, { timeoutMs }) {
   await fs.writeFile(invocation.stdoutFile, "", "utf8");
   await fs.writeFile(invocation.stderrFile, "", "utf8");
+  const stdoutStream = createWriteStream(invocation.stdoutFile, { flags: "a" });
+  const stderrStream = createWriteStream(invocation.stderrFile, { flags: "a" });
 
   return new Promise((resolve) => {
     const started = performance.now();
@@ -324,15 +394,24 @@ async function runProcess(invocation, { timeoutMs }) {
 
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
+      stdoutStream.write(chunk);
     });
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
+      stderrStream.write(chunk);
     });
     child.on("error", (error) => {
       stderr += `${error.message}\n`;
+      stderrStream.write(`${error.message}\n`);
     });
     child.on("close", async (code, signal) => {
       clearTimeout(timeout);
+      stdoutStream.end();
+      stderrStream.end();
+      await Promise.all([
+        once(stdoutStream, "finish").catch(() => {}),
+        once(stderrStream, "finish").catch(() => {})
+      ]);
       await fs.writeFile(invocation.stdoutFile, stdout, "utf8");
       await fs.writeFile(invocation.stderrFile, stderr, "utf8");
       resolve({
@@ -352,6 +431,12 @@ async function runProcess(invocation, { timeoutMs }) {
       });
     });
   });
+}
+
+function emitProgress(options, event) {
+  if (typeof options.onProgress === "function") {
+    options.onProgress(event);
+  }
 }
 
 async function scoreHarnessCase(testCase, runCase, options) {
@@ -572,6 +657,74 @@ async function loadHarnessRun(runPath) {
     ...run,
     runFile
   };
+}
+
+async function resolveHarnessRunPath(options = {}) {
+  if (options.runPath) {
+    return options.runPath;
+  }
+
+  const latestRun = await readLatestHarnessRun(options);
+  if (latestRun?.runFile) {
+    return latestRun.runFile;
+  }
+  if (latestRun?.outDir) {
+    return latestRun.outDir;
+  }
+
+  const fallbackDir = options.harness
+    ? path.join(DEFAULT_REPORTS_DIR, `${normaliseHarnessName(options.harness)}-harness-run`)
+    : path.join(DEFAULT_REPORTS_DIR, "harness-run");
+  if (await exists(resolveRunFile(fallbackDir))) {
+    return fallbackDir;
+  }
+
+  const hint = options.harness
+    ? `npm run eval:harness:${normaliseHarnessName(options.harness)} -- ...`
+    : "npm run eval:harness:codex -- ...";
+  throw new Error(
+    `No latest harness run found. Run ${hint} first, or pass a run directory to score.`
+  );
+}
+
+async function writeLatestHarnessRun(report, options = {}) {
+  const latestDir = path.resolve(options.latestDir ?? DEFAULT_REPORTS_DIR);
+  const pointer = {
+    type: "harness-latest",
+    version: 1,
+    harness: report.harness,
+    runFile: report.runFile,
+    outDir: report.outDir,
+    updatedAt: report.finishedAt
+  };
+
+  await fs.mkdir(latestDir, { recursive: true });
+  await Promise.all([
+    fs.writeFile(latestHarnessRunFile({ latestDir }), `${JSON.stringify(pointer, null, 2)}\n`, "utf8"),
+    fs.writeFile(
+      latestHarnessRunFile({ latestDir, harness: report.harness }),
+      `${JSON.stringify(pointer, null, 2)}\n`,
+      "utf8"
+    )
+  ]);
+}
+
+async function readLatestHarnessRun(options = {}) {
+  const latestFile = latestHarnessRunFile({
+    latestDir: options.latestDir,
+    harness: options.harness
+  });
+  if (!await exists(latestFile)) {
+    return undefined;
+  }
+  return JSON.parse(await fs.readFile(latestFile, "utf8"));
+}
+
+function latestHarnessRunFile({ latestDir = DEFAULT_REPORTS_DIR, harness } = {}) {
+  const filename = harness
+    ? `${normaliseHarnessName(harness)}-${HARNESS_LATEST_FILE}`
+    : HARNESS_LATEST_FILE;
+  return path.resolve(latestDir, filename);
 }
 
 function resolveRunFile(runPath = path.join("reports", "harness-run")) {

@@ -390,98 +390,227 @@ arguments, tool output, LLM decisions, and scoring.
 
 ## External Agent Harness Evals
 
-There are three practical ways to run agent-level evals:
+Harness evals run real MCP-capable agents such as Codex, Claude Code, or Gemini
+CLI against `webmcp-relay`. Use them when you want to see whether an external
+agent actually discovers and calls the right tools.
 
-- Use `eval agent` when you want this repo to own the full agent loop through an
-  OpenAI-compatible chat-completions API.
-- Use `eval harness run` when you want this repo to launch an external
-  MCP-capable harness such as Codex, Claude Code, or Gemini CLI.
-- Use `eval harness prepare` when you want to manually run the external harness
-  yourself with generated prompts and MCP configs.
-- Use `eval harness score` after the external harness run to score the resulting
-  transcript or relay telemetry against the same agent eval success criteria.
+### Fast Path
 
-Run with Codex:
+Run one Codex eval:
 
 ```sh
-npm run eval:harness run codex
+npm run eval:harness:codex -- evals/agent/pizza-maker.json
 ```
 
-That runs all bundled agent evals from `evals/agent/*.json` into
-`./reports/codex-harness-run`.
-
-Pass options with npm's `--` separator:
+Score the previous Codex run without knowing any paths:
 
 ```sh
-npm run eval:harness -- run codex evals/agent/pizza-maker.json \
-  --out ./reports/codex-harness \
+npm run eval:harness:codex score
+```
+
+The equivalent explicit score shortcut is:
+
+```sh
+npm run eval:harness:codex:score
+```
+
+Run one Codex eval with debug relay logs and a named output directory:
+
+```sh
+npm run eval:harness:codex -- evals/agent/pizza-maker.json \
+  --out ./reports/codex-smoke \
   --headless \
   --channel canary \
-  --report ./reports/codex-harness-report.json
+  --log-level debug \
+  --report ./reports/codex-smoke/report.json
 ```
 
-Target a subset with a file or glob:
+The command prints progress to the terminal on stderr and writes the full JSON
+run report to stdout. `--report` also saves that report to a file.
+
+Harness runs default to `--channel canary` because current WebMCP invocation
+support is behind Chrome feature flags. When `webmcp-relay` launches Chrome, it
+always forwards:
 
 ```sh
-npm run eval:harness -- run codex 'evals/agent/registry-*.json' \
-  --out ./reports/codex-registry-harness \
+--enable-features=WebMCPTesting,DevToolsWebMCPSupport
+```
+
+If you pass `--browser-url`, the relay connects to an existing browser instead
+of launching Chrome; start that browser yourself with the same feature flags.
+
+Always put npm's `--` separator before eval case paths and flags. For example,
+use `npm run eval:harness:codex -- --log-level debug`, not
+`npm run eval:harness:codex --log-level debug`. Without the separator, npm can
+consume flags before `webmcp-relay` sees them.
+
+Watch relay activity while the eval is running:
+
+```sh
+tail -f ./reports/codex-smoke/agent-pizza-large-bbq/relay.jsonl
+```
+
+Re-score the same run from telemetry:
+
+```sh
+npm run eval:harness:codex:score -- --source telemetry
+```
+
+Run all bundled agent evals:
+
+```sh
+npm run eval:harness:codex -- \
+  --out ./reports/codex-harness-run \
+  --headless \
+  --channel canary \
+  --log-level info \
+  --report ./reports/codex-harness-run/report.json
+```
+
+If you do not pass a case file, harness runs default to `evals/agent/*.json`.
+
+### Harnesses
+
+Codex:
+
+```sh
+npm run eval:harness:codex -- evals/agent/pizza-maker.json \
+  --out ./reports/codex-harness \
   --headless \
   --channel canary
 ```
 
-Run with Claude Code:
+Claude Code:
 
 ```sh
-npm run eval:harness run claude
-```
-
-With options:
-
-```sh
-npm run eval:harness -- run claude 'evals/agent/*.json' \
+npm run eval:harness:claude -- evals/agent/pizza-maker.json \
   --out ./reports/claude-harness \
   --headless \
-  --channel canary \
-  --report ./reports/claude-harness-report.json
+  --channel canary
 ```
 
-Run with Gemini CLI:
+Gemini CLI:
 
 ```sh
-npm run eval:harness run gemini
-```
-
-With options:
-
-```sh
-npm run eval:harness -- run gemini 'evals/agent/*.json' \
+npm run eval:harness:gemini -- evals/agent/pizza-maker.json \
   --out ./reports/gemini-harness \
   --headless \
-  --channel canary \
-  --report ./reports/gemini-harness-report.json
+  --channel canary
 ```
 
-Check the generated command without invoking a model:
+Equivalent long form:
 
 ```sh
 npm run eval:harness -- run codex evals/agent/pizza-maker.json \
   --out ./reports/codex-harness \
+  --headless \
+  --channel canary
+```
+
+When using the generic `eval:harness` npm script, put npm's `--` separator
+before the harness subcommand and options. The shortcut scripts already include
+the subcommand, so their `--` separator goes before case files and options.
+
+### Output Files
+
+Every harness run creates one output directory. Each case gets a case directory:
+
+```text
+reports/codex-smoke/
+  harness-run.json
+  report.json
+  agent-pizza-large-bbq/
+    case.json
+    prompt.md
+    mcp-config.json
+    runner-command.sh
+    relay.jsonl
+    codex-stdout.txt
+    codex-stderr.txt
+    registry.sqlite
+    telemetry.sqlite
+    transcript.json
+```
+
+Important files:
+
+- `mcp-config.json`: MCP config for the harness
+- `prompt.md`: the task prompt to give the agent
+- `case.json`: the original eval case
+- `runner-command.sh`: exact harness command that was run
+- `<harness>-stdout.txt`: captured harness stdout
+- `<harness>-stderr.txt`: captured harness stderr
+- `relay.jsonl`: relay server logs; use this to debug discovery and tool calls
+- `registry.sqlite`: per-case local tool registry
+- `telemetry.sqlite`: per-case telemetry DB for tool-call scoring
+- `transcript.json`: optional strict-scoring transcript written by the harness
+
+`--log-level debug` makes `relay.jsonl` more detailed. It does not stream relay
+logs to stdout because MCP stdio uses stdout for protocol messages and the eval
+command uses stdout for the JSON report. The CLI prints high-level progress to
+stderr and writes detailed logs to the case directory.
+
+### Scoring
+
+`eval harness run` scores automatically after it runs the harness. Re-run scoring
+when you want to inspect a run again or switch scoring source.
+
+Score the previous run for a specific harness:
+
+```sh
+npm run eval:harness:codex score
+npm run eval:harness:codex:score
+npm run eval:harness:claude:score
+npm run eval:harness:gemini:score
+```
+
+Score the previous run, regardless of harness:
+
+```sh
+npm run eval:harness:score
+```
+
+Each harness run writes latest-run pointers under `reports/`, so score commands
+can find the last run even when you used a custom `--out` directory.
+
+Scoring modes:
+
+- `--source auto` uses `transcript.json` when present, otherwise falls back to
+  relay telemetry. This is the default.
+- `--source transcript` requires transcript files and gives strict scoring,
+  including output text and finish state.
+- `--source telemetry` scores tool calls from `telemetry.sqlite`. This works
+  even when the external harness cannot write transcripts, but output text and
+  finish-state criteria are reported as unscored.
+
+Write the score report:
+
+```sh
+npm run eval:harness:codex:score -- \
+  --source telemetry \
+  --report ./reports/codex-smoke/score.json
+```
+
+### Dry Run
+
+Check the generated commands without invoking a model:
+
+```sh
+npm run eval:harness:codex -- evals/agent/pizza-maker.json \
+  --out ./reports/codex-dry-run \
   --headless \
   --channel canary \
   --dry-run
 ```
 
-`eval harness run` prepares the case bundle, invokes the selected harness for
-each case, captures stdout/stderr, and then scores the run. Each case directory
-contains:
+Then inspect:
 
-- `mcp-config.json`: MCP config for the harness
-- `prompt.md`: the task prompt to give the agent
-- `case.json`: the original eval case
-- `registry.sqlite`: per-case local tool registry
-- `telemetry.sqlite`: per-case telemetry DB for tool-call scoring
-- `relay.jsonl`: relay logs
-- `transcript.json`: optional strict-scoring transcript path
+```sh
+cat ./reports/codex-dry-run/agent-pizza-large-bbq/runner-command.sh
+cat ./reports/codex-dry-run/agent-pizza-large-bbq/mcp-config.json
+```
+
+### Manual Harness Runs
 
 Use the manual prepare path when you want to run the harness yourself:
 
@@ -497,23 +626,6 @@ Then configure the harness with the case `mcp-config.json`, start a fresh
 session, and paste the case `prompt.md`. The prompt asks the agent to use
 `webmcp-relay` tools and, when possible, write `transcript.json` with tool calls,
 outputs, and final answer.
-
-Score the harness run:
-
-```sh
-npm run eval:harness -- score ./reports/codex-harness \
-  --report ./reports/codex-harness-score.json
-```
-
-Scoring modes:
-
-- `--source auto` uses `transcript.json` when present, otherwise falls back to
-  telemetry.
-- `--source transcript` requires transcript files and gives strict scoring,
-  including output text and finish state.
-- `--source telemetry` scores tool calls from relay telemetry. This is useful
-  for Claude/Codex-style harnesses that cannot write transcripts, but output
-  criteria and finish state are reported as unscored.
 
 Agent case shape:
 
@@ -598,13 +710,13 @@ npm run eval:agent -- evals/agent/pizza-maker.json --headless --channel canary -
 Run an external Codex-style harness eval:
 
 ```sh
-npm run eval:harness -- run codex evals/agent/pizza-maker.json --out ./reports/harness-run --headless --channel canary --report ./reports/harness-run-report.json
+npm run eval:harness:codex -- evals/agent/pizza-maker.json --out ./reports/harness-run --headless --channel canary --report ./reports/harness-run-report.json
 ```
 
 Score an external harness run:
 
 ```sh
-npm run eval:harness -- score ./reports/harness-run --report ./reports/harness-score.json
+npm run eval:harness:codex score
 ```
 
 Run stable mode:

@@ -41,6 +41,11 @@ export async function runEvalCli(args) {
     );
     return;
   }
+  if (command === "harness" && options.harnessCommand === "run") {
+    options.onProgress = (event) => {
+      process.stderr.write(formatHarnessProgress(event));
+    };
+  }
 
   const report = command === "agent"
     ? await runAgentEval(options)
@@ -447,6 +452,10 @@ function parseEvalHarnessArgs(args) {
 
 function parseEvalHarnessRunArgs(args) {
   const [harness, ...rest] = args;
+  if (rest[0] === "score") {
+    return parseEvalHarnessScoreArgs(rest.slice(1), { harness });
+  }
+
   const commonArgs = [];
   const caseFiles = [];
   const extra = {
@@ -550,7 +559,9 @@ function parseEvalHarnessRunArgs(args) {
   }
 
   return {
-    ...parseCommonArgs(commonArgs),
+    ...parseCommonArgs(commonArgs, {
+      channel: "canary"
+    }),
     ...extra,
     caseFiles
   };
@@ -623,16 +634,19 @@ function parseEvalHarnessPrepareArgs(args) {
   }
 
   return {
-    ...parseCommonArgs(commonArgs),
+    ...parseCommonArgs(commonArgs, {
+      channel: "canary"
+    }),
     ...extra,
     caseFiles
   };
 }
 
-function parseEvalHarnessScoreArgs(args) {
+function parseEvalHarnessScoreArgs(args, defaults = {}) {
   const extra = {
     harnessCommand: "score",
-    source: "auto"
+    source: "auto",
+    ...defaults
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -656,6 +670,10 @@ function parseEvalHarnessScoreArgs(args) {
         extra.telemetryDb = readValue(arg, inlineValue, args, ++index);
         if (inlineValue !== undefined) index -= 1;
         break;
+      case "--harness":
+        extra.harness = readValue(arg, inlineValue, args, ++index);
+        if (inlineValue !== undefined) index -= 1;
+        break;
       case "--source":
         extra.source = readValue(arg, inlineValue, args, ++index);
         if (inlineValue !== undefined) index -= 1;
@@ -676,9 +694,6 @@ function parseEvalHarnessScoreArgs(args) {
   if (!["auto", "transcript", "telemetry"].includes(extra.source)) {
     throw new Error("--source must be auto, transcript, or telemetry.");
   }
-  if (!extra.help && !extra.runPath) {
-    throw new Error("eval harness score requires a harness run directory or harness-run.json.");
-  }
   if (extra.telemetryLimit !== undefined && (!Number.isFinite(extra.telemetryLimit) || extra.telemetryLimit < 1)) {
     throw new Error("--limit must be a positive number.");
   }
@@ -695,6 +710,46 @@ async function writeReport(report, options) {
   }
 
   process.stdout.write(`${text}\n`);
+}
+
+function formatHarnessProgress(event) {
+  switch (event.type) {
+    case "harness.run.start":
+      return [
+        `[webmcp-relay] harness run: ${event.harness}`,
+        `[webmcp-relay] cases: ${event.caseCount}`,
+        `[webmcp-relay] output: ${event.outDir}`,
+        `[webmcp-relay] run file: ${event.runFile}`
+      ].join("\n") + "\n";
+    case "harness.case.start":
+      return [
+        `[webmcp-relay] case ${event.index}/${event.total}: ${event.id}`,
+        `[webmcp-relay] relay log: ${event.logFile}`,
+        `[webmcp-relay] harness stdout: ${event.stdoutFile}`,
+        `[webmcp-relay] harness stderr: ${event.stderrFile}`,
+        `[webmcp-relay] runner command: ${event.runnerCommandFile}`
+      ].join("\n") + "\n";
+    case "harness.case.done":
+      return `[webmcp-relay] case done: ${event.id} ${event.status} exit=${event.exitCode ?? "n/a"}${event.durationMs ? ` duration=${formatDuration(event.durationMs)}` : ""}\n`;
+    case "harness.score.start":
+      return event.skipped
+        ? "[webmcp-relay] scoring skipped (--no-score)\n"
+        : `[webmcp-relay] scoring: source=${event.source}\n`;
+    case "harness.score.done":
+      if (event.skipped) {
+        return "";
+      }
+      return `[webmcp-relay] score: ${event.summary?.scoredSuccess ?? 0}/${event.summary?.total ?? 0} scored, ${event.summary?.strictSuccess ?? 0}/${event.summary?.total ?? 0} strict\n`;
+    default:
+      return "";
+  }
+}
+
+function formatDuration(ms) {
+  if (!Number.isFinite(ms)) {
+    return "n/a";
+  }
+  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 const COMMON_VALUE_OPTIONS = new Set([
@@ -870,7 +925,8 @@ function helpText() {
   webmcp-relay eval agent <agent-case.json...> [options]
   webmcp-relay eval search <search-case.json...> [options]
   webmcp-relay eval harness prepare <agent-case.json...> [options]
-  webmcp-relay eval harness score <run-dir|harness-run.json> [options]
+  webmcp-relay eval harness run <codex|claude|gemini> [agent-case.json|glob...] [options]
+  webmcp-relay eval harness score [run-dir|harness-run.json] [options]
 
 Options:
   --report <path>           Write JSON report to a file.
@@ -975,19 +1031,26 @@ function harnessHelpText() {
   return `Usage:
   webmcp-relay eval harness prepare <agent-case.json...> [options]
   webmcp-relay eval harness run <codex|claude|gemini> [agent-case.json|glob...] [options]
-  webmcp-relay eval harness score <run-dir|harness-run.json> [options]
+  webmcp-relay eval harness score [run-dir|harness-run.json] [options]
 
 This prepares eval cases for an external MCP-capable agent harness such as
-Codex, Claude, or a custom runner. Each case gets an isolated prompt,
+Codex, Claude, Gemini CLI, or a custom runner. Each case gets an isolated prompt,
 mcp-config.json, registry DB, telemetry DB, log file, and optional transcript
 path.
+
+Run prints high-level progress to stderr and writes the JSON report to stdout.
+Relay details are written to each case's relay.jsonl file. Use --log-level debug
+for more detailed relay logs.
+Each run records a latest-run pointer, so score can be run without a path.
+Harness runs default to --channel canary and launched Chrome instances always
+receive --enable-features=WebMCPTesting,DevToolsWebMCPSupport.
 
 Prepare options:
   --out <dir>               Output directory. Default: reports/harness-run.
   --harness <name>          Label for the target harness, for example codex or claude.
   --report <path>           Also write the prepare report to a file.
   --headless                Include --headless in generated relay configs.
-  --channel <name>          Chrome channel for generated relay configs.
+  --channel <name>          Chrome channel for generated relay configs. Default: canary.
   --browser-url <url>       Connect generated relay configs to an existing browser.
   --timeout <ms>            Navigation timeout.
 
@@ -1005,17 +1068,19 @@ Run options:
 Score options:
   --report <path>           Write JSON score report to a file.
   --source <mode>           auto, transcript, or telemetry. Default: auto.
+  --harness <name>          Score the latest run for codex, claude, or gemini.
   --transcript-dir <dir>    Directory containing <case-id>.json transcripts.
   --telemetry-db <path>     Override telemetry DB path for scoring.
   --limit <number>          Max telemetry events to inspect. Default: 1000.
 
 Examples:
-  npm run eval:harness run codex
-  webmcp-relay eval harness prepare evals/agent/pizza-maker.json --out ./reports/codex-harness --harness codex --headless --channel canary
-  webmcp-relay eval harness run codex evals/agent/pizza-maker.json --out ./reports/codex-harness --headless --channel canary
-  webmcp-relay eval harness run codex 'evals/agent/*.json' --out ./reports/codex-harness --headless --channel canary
-  webmcp-relay eval harness run claude evals/agent/pizza-maker.json --out ./reports/claude-harness --headless --channel canary
-  webmcp-relay eval harness run gemini evals/agent/pizza-maker.json --out ./reports/gemini-harness --headless --channel canary
-  webmcp-relay eval harness score ./reports/codex-harness --report ./reports/codex-harness-score.json
+  npm run eval:harness:codex -- evals/agent/pizza-maker.json
+  npm run eval:harness:codex score
+  npm run eval:harness:codex:score
+  npm run eval:harness:codex -- evals/agent/pizza-maker.json --out ./reports/codex-smoke --headless --channel canary --log-level debug
+  npm run eval:harness:codex -- --out ./reports/codex-harness-run --headless --channel canary
+  npm run eval:harness:codex:score -- --source telemetry
+  npm run eval:harness -- run codex evals/agent/pizza-maker.json --out ./reports/codex-harness --headless --channel canary
+  webmcp-relay eval harness prepare evals/agent/pizza-maker.json --out ./reports/manual-harness --harness codex --headless --channel canary
 `;
 }

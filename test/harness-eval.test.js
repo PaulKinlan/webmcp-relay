@@ -168,13 +168,19 @@ test("harness telemetry scoring includes Chrome DevTools tool calls", async () =
 
 test("harness run dry-run prepares codex command and score", async () => {
   const outDir = await tempDir();
+  const latestDir = await tempDir();
+  const progressEvents = [];
   const report = await runHarnessEval({
     caseFiles: ["evals/agent/pizza-maker.json"],
     harness: "codex",
     outDir,
     headless: true,
     channel: "canary",
-    dryRun: true
+    dryRun: true,
+    latestDir,
+    onProgress: (event) => {
+      progressEvents.push(event);
+    }
   });
 
   assert.equal(report.type, "harness-run");
@@ -190,7 +196,27 @@ test("harness run dry-run prepares codex command and score", async () => {
   assert.equal(report.runs[0].commandLine.includes("prompt.md"), true);
   assert.equal(await exists(path.join(outDir, "harness-run.json")), true);
   assert.equal(await exists(path.join(outDir, "agent-pizza-large-bbq", "runner-command.sh")), true);
+  const mcpConfig = JSON.parse(
+    await fs.readFile(path.join(outDir, "agent-pizza-large-bbq", "mcp-config.json"), "utf8")
+  );
+  assert.equal(mcpConfig.mcpServers["webmcp-relay"].args.includes("--channel"), true);
+  assert.equal(mcpConfig.mcpServers["webmcp-relay"].args.includes("canary"), true);
   assert.equal(report.score.summary.total, 1);
+  assert.deepEqual(progressEvents.map((event) => event.type), [
+    "harness.run.start",
+    "harness.case.start",
+    "harness.case.done",
+    "harness.score.start",
+    "harness.score.done"
+  ]);
+
+  const latestScore = await scoreHarnessEval({
+    harness: "codex",
+    latestDir
+  });
+
+  assert.equal(latestScore.resolvedRunPath, path.join(outDir, "harness-run.json"));
+  assert.equal(latestScore.summary.total, 1);
 });
 
 test("harness run dry-run expands agent eval glob", async () => {

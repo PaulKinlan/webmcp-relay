@@ -5,6 +5,11 @@ export const CHROME_TOOL_NAMES = {
   executeWebmcpTool: "execute_webmcp_tool"
 };
 
+export const REQUIRED_WEBMCP_CHROME_FEATURES = [
+  "WebMCPTesting",
+  "DevToolsWebMCPSupport"
+];
+
 export function buildChromeDevToolsMcpArgs(options = {}) {
   const {
     mcpPackage = "chrome-devtools-mcp@latest",
@@ -12,7 +17,7 @@ export function buildChromeDevToolsMcpArgs(options = {}) {
     channel,
     headless = false,
     isolated = true,
-    chromeFeatures = "WebMCPTesting,DevToolsWebMCPSupport",
+    chromeFeatures,
     extraServerArgs = []
   } = options;
 
@@ -33,13 +38,29 @@ export function buildChromeDevToolsMcpArgs(options = {}) {
       args.push(`--channel=${channel}`);
     }
 
-    if (chromeFeatures) {
-      args.push(`--chrome-arg=--enable-features=${chromeFeatures}`);
+    const requiredChromeFeatures = webmcpChromeFeatures(chromeFeatures);
+    if (requiredChromeFeatures) {
+      args.push(`--chrome-arg=--enable-features=${requiredChromeFeatures}`);
     }
   }
 
   args.push(...extraServerArgs);
   return args;
+}
+
+export function webmcpChromeFeatures(chromeFeatures) {
+  const featureNames = new Set(
+    String(chromeFeatures ?? "")
+      .split(",")
+      .map((feature) => feature.trim())
+      .filter(Boolean)
+  );
+
+  for (const feature of REQUIRED_WEBMCP_CHROME_FEATURES) {
+    featureNames.add(feature);
+  }
+
+  return [...featureNames].join(",");
 }
 
 export async function discoverWebmcpTools(client, options) {

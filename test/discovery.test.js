@@ -44,6 +44,19 @@ test("connects to an existing browser without adding launch-only Chrome flags", 
   );
 });
 
+test("always includes required WebMCP Chrome feature flags when launching", () => {
+  const args = buildChromeDevToolsMcpArgs({
+    chromeFeatures: "SomeOtherFeature"
+  });
+
+  assert.equal(
+    args.includes(
+      "--chrome-arg=--enable-features=SomeOtherFeature,WebMCPTesting,DevToolsWebMCPSupport"
+    ),
+    true
+  );
+});
+
 test("navigates before listing WebMCP tools", async () => {
   const client = new MockClient();
   const result = await discoverWebmcpTools(client, {

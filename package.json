@@ -1,6 +1,6 @@
 {
   "name": "webmcp-relay",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "STDIO MCP relay that exposes a page's WebMCP tools to agents through Chrome DevTools MCP.",
   "engines": {
@@ -25,6 +25,13 @@
     "eval:search": "node ./src/webmcp-relay.js eval search",
     "eval:agent": "node ./src/webmcp-relay.js eval agent",
     "eval:harness": "node ./src/webmcp-relay.js eval harness",
+    "eval:harness:codex": "node ./src/webmcp-relay.js eval harness run codex",
+    "eval:harness:codex:score": "node ./src/webmcp-relay.js eval harness score --harness codex",
+    "eval:harness:claude": "node ./src/webmcp-relay.js eval harness run claude",
+    "eval:harness:claude:score": "node ./src/webmcp-relay.js eval harness score --harness claude",
+    "eval:harness:gemini": "node ./src/webmcp-relay.js eval harness run gemini",
+    "eval:harness:gemini:score": "node ./src/webmcp-relay.js eval harness score --harness gemini",
+    "eval:harness:score": "node ./src/webmcp-relay.js eval harness score",
     "test": "node --test"
   },
   "dependencies": {
