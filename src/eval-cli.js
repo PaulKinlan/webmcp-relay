@@ -540,7 +540,7 @@ function parseEvalHarnessRunArgs(args) {
   }
 
   if (!extra.help && caseFiles.length === 0) {
-    caseFiles.push("evals/agent/pizza-maker.json");
+    caseFiles.push("evals/agent/*.json");
   }
   if (!["auto", "transcript", "telemetry"].includes(extra.scoreSource)) {
     throw new Error("--score-source must be auto, transcript, or telemetry.");
@@ -974,7 +974,7 @@ Case shape:
 function harnessHelpText() {
   return `Usage:
   webmcp-relay eval harness prepare <agent-case.json...> [options]
-  webmcp-relay eval harness run <codex|claude|gemini> <agent-case.json...> [options]
+  webmcp-relay eval harness run <codex|claude|gemini> [agent-case.json|glob...] [options]
   webmcp-relay eval harness score <run-dir|harness-run.json> [options]
 
 This prepares eval cases for an external MCP-capable agent harness such as
@@ -1013,6 +1013,7 @@ Examples:
   npm run eval:harness run codex
   webmcp-relay eval harness prepare evals/agent/pizza-maker.json --out ./reports/codex-harness --harness codex --headless --channel canary
   webmcp-relay eval harness run codex evals/agent/pizza-maker.json --out ./reports/codex-harness --headless --channel canary
+  webmcp-relay eval harness run codex 'evals/agent/*.json' --out ./reports/codex-harness --headless --channel canary
   webmcp-relay eval harness run claude evals/agent/pizza-maker.json --out ./reports/claude-harness --headless --channel canary
   webmcp-relay eval harness run gemini evals/agent/pizza-maker.json --out ./reports/gemini-harness --headless --channel canary
   webmcp-relay eval harness score ./reports/codex-harness --report ./reports/codex-harness-score.json

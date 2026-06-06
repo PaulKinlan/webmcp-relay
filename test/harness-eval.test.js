@@ -151,6 +151,22 @@ test("harness run dry-run prepares codex command and score", async () => {
   assert.equal(report.score.summary.total, 1);
 });
 
+test("harness run dry-run expands agent eval glob", async () => {
+  const outDir = await tempDir();
+  const report = await runHarnessEval({
+    caseFiles: ["evals/agent/*.json"],
+    harness: "codex",
+    outDir,
+    dryRun: true,
+    noScore: true
+  });
+
+  assert.equal(report.caseCount >= 2, true);
+  assert.equal(report.runs.length, report.caseCount);
+  assert.equal(report.runs.some((run) => run.id === "agent-pizza-large-bbq"), true);
+  assert.equal(report.runs.some((run) => run.id === "agent-registry-leather-return-policy"), true);
+});
+
 test("harness run dry-run prepares gemini project settings", async () => {
   const outDir = await tempDir();
   const report = await runHarnessEval({

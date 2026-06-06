@@ -395,7 +395,7 @@ Run with Codex:
 npm run eval:harness run codex
 ```
 
-That runs the default smoke case, `evals/agent/pizza-maker.json`, into
+That runs all bundled agent evals from `evals/agent/*.json` into
 `./reports/codex-harness-run`.
 
 Pass options with npm's `--` separator:
@@ -408,6 +408,15 @@ npm run eval:harness -- run codex evals/agent/pizza-maker.json \
   --report ./reports/codex-harness-report.json
 ```
 
+Target a subset with a file or glob:
+
+```sh
+npm run eval:harness -- run codex 'evals/agent/registry-*.json' \
+  --out ./reports/codex-registry-harness \
+  --headless \
+  --channel canary
+```
+
 Run with Claude Code:
 
 ```sh
@@ -417,7 +426,7 @@ npm run eval:harness run claude
 With options:
 
 ```sh
-npm run eval:harness -- run claude evals/agent/pizza-maker.json \
+npm run eval:harness -- run claude 'evals/agent/*.json' \
   --out ./reports/claude-harness \
   --headless \
   --channel canary \
@@ -433,7 +442,7 @@ npm run eval:harness run gemini
 With options:
 
 ```sh
-npm run eval:harness -- run gemini evals/agent/pizza-maker.json \
+npm run eval:harness -- run gemini 'evals/agent/*.json' \
   --out ./reports/gemini-harness \
   --headless \
   --channel canary \

@@ -441,7 +441,7 @@ export function scoreAgentTranscript(testCase, transcript) {
 export async function loadAgentEvalCases(files) {
   const cases = [];
 
-  for (const file of files) {
+  for (const file of await expandCaseFiles(files)) {
     const text = await fs.readFile(file, "utf8");
     const parsed = JSON.parse(text);
     const fileCases = Array.isArray(parsed) ? parsed : parsed.cases ?? [parsed];
@@ -449,6 +449,49 @@ export async function loadAgentEvalCases(files) {
   }
 
   return cases;
+}
+
+async function expandCaseFiles(files) {
+  const expanded = [];
+
+  for (const file of files) {
+    if (hasGlobStar(file)) {
+      expanded.push(...await expandSimpleGlob(file));
+    } else {
+      expanded.push(file);
+    }
+  }
+
+  return [...new Set(expanded)].sort();
+}
+
+async function expandSimpleGlob(pattern) {
+  const dir = path.dirname(pattern);
+  const basename = path.basename(pattern);
+  const regex = globBasenameRegex(basename);
+  const entries = await fs.readdir(dir);
+  const matches = entries
+    .filter((entry) => regex.test(entry))
+    .map((entry) => path.join(dir, entry))
+    .sort();
+
+  if (matches.length === 0) {
+    throw new Error(`No agent eval files matched ${pattern}.`);
+  }
+
+  return matches;
+}
+
+function hasGlobStar(value) {
+  return String(value).includes("*");
+}
+
+function globBasenameRegex(pattern) {
+  const escaped = String(pattern)
+    .split("*")
+    .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+    .join(".*");
+  return new RegExp(`^${escaped}$`);
 }
 
 function validateAgentEvalCase(testCase, file) {

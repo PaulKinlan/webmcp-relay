@@ -192,7 +192,7 @@ Eval:
   webmcp-relay eval agent <agent-case.json...> --model <model> --report ./agent-report.json
   webmcp-relay eval search <search-case.json...> --report ./search-report.json
   webmcp-relay eval harness prepare <agent-case.json...> --out ./harness-run
-  webmcp-relay eval harness run codex <agent-case.json...> --out ./harness-run
+  webmcp-relay eval harness run codex [agent-case.json|glob...] --out ./harness-run
   webmcp-relay eval harness score ./harness-run --report ./harness-score.json
 
 Registry:
